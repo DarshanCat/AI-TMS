@@ -5,11 +5,15 @@ import { createClient } from "@/lib/supabase/server";
 const NAV: [string, string][] = [
   ["Dashboard", "/dashboard"],
   ["Inbox", "/dashboard/inbox"],
+  ["Tool Desk", "/dashboard/tool-desk"],
+  ["Prepare", "/dashboard/prepare"],
   ["Inventory", "/dashboard/inventory"],
   ["Ledger", "/dashboard/ledger"],
   ["Scrap Register", "/dashboard/scrap"],
   ["Vendors", "/dashboard/vendors"],
+  ["Forecasting", "/dashboard/forecasting"],
   ["Reports", "/dashboard/reports"],
+  ["Daily", "/dashboard/daily"],
 ];
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {

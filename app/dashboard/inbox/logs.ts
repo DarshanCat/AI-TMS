@@ -27,8 +27,12 @@ export const LOGS: LogSpec[] = [
     fields: [
       { key: "date", label: "Date", type: "date", scope: "header" },
       { key: "newtool", label: "New Tool?", type: "select", scope: "row", options: ["N", "Y"] },
+      { key: "typecode", label: "Type Code", type: "text", scope: "row", placeholder: "SC, EM, CD, TP…" },
+      { key: "dia", label: "Diameter (mm)", type: "number", scope: "row" },
+      { key: "length", label: "Length (mm)", type: "number", scope: "row" },
+      { key: "namecode", label: "Name/Code (non-dimensioned)", type: "text", scope: "row", placeholder: "e.g. M8x1.25" },
       { key: "name", label: "Tool Name (required if new)", type: "text", scope: "row" },
-      { key: "class", label: "Class / Type", type: "text", scope: "row" },
+      { key: "class", label: "Class / Tool Type", type: "text", scope: "row" },
       { key: "supplier", label: "Supplier Name", type: "text", scope: "header", maps: "tofrom" },
       { key: "supcode", label: "Supplier Code", type: "text", scope: "header" },
       { key: "po", label: "PO No", type: "text", scope: "header" },

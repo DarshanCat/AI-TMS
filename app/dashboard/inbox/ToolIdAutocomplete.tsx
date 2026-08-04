@@ -1,5 +1,6 @@
 "use client";
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { createClient } from "@/lib/supabase/client";
 
 export interface ToolMatch {
@@ -16,26 +17,33 @@ const STATUS_CHIP: Record<string, string> = {
 
 /**
  * Tool ID input with live suggestions against tool_inventory (~1,343 real
- * tools). Debounced so it doesn't hammer Supabase on every keystroke. When
- * the typed value doesn't match anything after the debounce settles, it
- * shows "No ID found" instead of silently failing — the whole point being
- * to stop store staff losing time on typos at issue/return.
+ * tools). The dropdown renders via a portal into document.body, positioned
+ * by the input's real screen coordinates — required because the input sits
+ * inside a horizontally-scrolling table container, and any ancestor with
+ * overflow:auto clips a normal absolutely-positioned child regardless of
+ * z-index. A separate dropdownRef lets click-outside detection recognize
+ * clicks inside the portal (which lives outside boxRef in the real DOM).
  */
 export default function ToolIdAutocomplete({
-  value, onChange, placeholder, allowNew = false,
+  value, onChange, placeholder, allowNew = false, onResolved,
 }: {
   value: string;
   onChange: (v: string) => void;
   placeholder?: string;
-  /** Suppress the "No ID found" warning — e.g. on the Inward form, where a
-   *  brand-new Tool ID is the normal case, not a typo. */
   allowNew?: boolean;
+  /** Fires with the matched tool's name/type when the typed value exactly
+   *  matches a real Tool ID — mirrors the real Excel logs' auto-VLOOKUP
+   *  Tool Name column. Fires with null when there's no exact match. */
+  onResolved?: (match: ToolMatch | null) => void;
 }) {
   const [matches, setMatches] = useState<ToolMatch[]>([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
+  const [rect, setRect] = useState<{ top: number; left: number; width: number } | null>(null);
   const boxRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   useEffect(() => {
@@ -51,8 +59,15 @@ export default function ToolIdAutocomplete({
         .select("tool_id,name,type,status")
         .ilike("tool_id", `%${q}%`)
         .order("tool_id", { ascending: true })
-        .limit(8);
-      setMatches((data as ToolMatch[]) ?? []);
+        .limit(30);
+      const upperQ = q.toUpperCase();
+      const ranked = ((data as ToolMatch[]) ?? []).sort((a, b) => {
+        const aStarts = a.tool_id.toUpperCase().startsWith(upperQ) ? 0 : 1;
+        const bStarts = b.tool_id.toUpperCase().startsWith(upperQ) ? 0 : 1;
+        if (aStarts !== bStarts) return aStarts - bStarts;
+        return a.tool_id.localeCompare(b.tool_id);
+      }).slice(0, 8);
+      setMatches(ranked);
       setLoading(false);
       setSearched(true);
     }, 250);
@@ -62,18 +77,47 @@ export default function ToolIdAutocomplete({
 
   useEffect(() => {
     function onClickOutside(e: MouseEvent) {
-      if (boxRef.current && !boxRef.current.contains(e.target as Node)) setOpen(false);
+      const t = e.target as Node;
+      if (boxRef.current?.contains(t)) return;
+      if (dropdownRef.current?.contains(t)) return;
+      setOpen(false);
     }
     document.addEventListener("mousedown", onClickOutside);
     return () => document.removeEventListener("mousedown", onClickOutside);
   }, []);
 
+  function updateRect() {
+    if (!inputRef.current) return;
+    const r = inputRef.current.getBoundingClientRect();
+    setRect({ top: r.bottom + 4, left: r.left, width: r.width });
+  }
+
+  useEffect(() => {
+    if (!open) return;
+    updateRect();
+    window.addEventListener("scroll", updateRect, true);
+    window.addEventListener("resize", updateRect);
+    return () => {
+      window.removeEventListener("scroll", updateRect, true);
+      window.removeEventListener("resize", updateRect);
+    };
+  }, [open]);
+
   const exactMatch = matches.some((m) => m.tool_id.toUpperCase() === value.trim().toUpperCase());
+
+  useEffect(() => {
+    const m = matches.find((x) => x.tool_id.toUpperCase() === value.trim().toUpperCase());
+    onResolved?.(m ?? null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [matches, value]);
+
   const showNoMatch = !allowNew && searched && !loading && value.trim().length >= 2 && matches.length === 0;
+  const showDropdown = open && value.trim().length >= 2 && !exactMatch && matches.length > 0;
 
   return (
     <div ref={boxRef} style={{ position: "relative" }}>
       <input
+        ref={inputRef}
         className="input"
         placeholder={placeholder ?? "e.g. SC 0680 035 01"}
         value={value}
@@ -86,10 +130,10 @@ export default function ToolIdAutocomplete({
           No ID found — check spelling, or Inward it first if it&apos;s new.
         </div>
       )}
-      {open && value.trim().length >= 2 && !exactMatch && matches.length > 0 && (
-        <div className="panel" style={{
-          position: "absolute", top: "100%", left: 0, right: 0, zIndex: 20,
-          marginTop: 2, maxHeight: 220, overflow: "auto", boxShadow: "0 4px 14px rgba(0,0,0,0.12)",
+      {showDropdown && rect && typeof document !== "undefined" && createPortal(
+        <div ref={dropdownRef} className="panel" style={{
+          position: "fixed", top: rect.top, left: rect.left, width: rect.width, zIndex: 9999,
+          maxHeight: 260, overflow: "auto", boxShadow: "0 6px 20px rgba(0,0,0,0.18)", background: "var(--panel)",
         }}>
           {matches.map((m) => (
             <div key={m.tool_id}
@@ -103,14 +147,17 @@ export default function ToolIdAutocomplete({
             >
               <div style={{ minWidth: 0 }}>
                 <div className="id">{m.tool_id}</div>
-                <div className="muted" style={{ fontSize: 11, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                  {m.name}{m.type ? ` · ${m.type}` : ""}
+                <div className="muted" style={{ fontSize: 11, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {m.name}
                 </div>
               </div>
-              <span className={"chip " + (STATUS_CHIP[m.status] ?? "chip-scrap")} style={{ flexShrink: 0 }}>{m.status}</span>
+              <span className={"chip " + (STATUS_CHIP[m.status] ?? "chip-scrap")} style={{ flexShrink: 0 }}>
+                {m.status}
+              </span>
             </div>
           ))}
-        </div>
+        </div>,
+        document.body,
       )}
     </div>
   );

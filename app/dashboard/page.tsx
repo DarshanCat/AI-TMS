@@ -4,7 +4,8 @@ export default async function DashboardPage() {
   const supabase = await createClient();
   const { data: inv } = await supabase
     .from("tool_inventory")
-    .select("avail,inuse,wregr,atregr,scrap");
+    .select("avail,inuse,wregr,atregr,scrap")
+    .limit(5000);
 
   const rows = inv ?? [];
   const has = rows.length > 0;

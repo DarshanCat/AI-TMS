@@ -37,7 +37,6 @@ const CANDIDATES = {
   tool_id: ["tool id", "toolid", "id", "tool no", "tool code"],
   name: ["name", "tool name", "description", "desc"],
   type: ["type", "category", "tool type", "class"],
-  loc: ["location", "storage location", "loc", "store location", "bin"],
   qty: ["qty", "quantity", "owned", "stock", "on hand", "opening stock"],
 };
 
@@ -51,7 +50,6 @@ function findColumn(headers, candidates) {
     const i = normed.indexOf(c);
     if (i !== -1) return i;
   }
-  // fallback: partial match
   for (const c of candidates) {
     const i = normed.findIndex((h) => h.includes(c));
     if (i !== -1) return i;
@@ -59,9 +57,8 @@ function findColumn(headers, candidates) {
   return -1;
 }
 
-// --- read + parse -----------------------------------------------------
 const buf = readFileSync(filePath);
-const wb = XLSX.read(buf, { type: "buffer" });
+const wb = XLSX.read(buf, { type: "buffer", cellDates: true });
 const sheet = wb.Sheets[wb.SheetNames[0]];
 const rows = XLSX.utils.sheet_to_json(sheet, { header: 1, blankrows: false });
 
@@ -77,7 +74,7 @@ const col = {
   tool_id: findColumn(headers, CANDIDATES.tool_id),
   name: findColumn(headers, CANDIDATES.name),
   type: findColumn(headers, CANDIDATES.type),
-  loc: findColumn(headers, CANDIDATES.loc),
+  loc: -1,
   qty: findColumn(headers, CANDIDATES.qty),
 };
 
@@ -120,7 +117,6 @@ if (!commit) {
   process.exit(0);
 }
 
-// --- write --------------------------------------------------------------
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
 if (!url || !key) {
@@ -148,9 +144,6 @@ for (let i = 0; i < parsed.length; i += BATCH) {
     avail: r.qty, inuse: 0, wregr: 0, atregr: 0, wscrap: 0, scrap: 0,
     owned: r.qty, status: r.qty > 0 ? "Available" : "Available",
   }));
-  // Existing tools keep their live counters — only insert rows that don't
-  // exist yet. Updating avail/owned on every re-run would silently overwrite
-  // real stock movements with the sheet's opening figures.
   const { error: iErr } = await supabase
     .from("tool_inventory")
     .upsert(invRows, { onConflict: "tool_id", ignoreDuplicates: true });

@@ -8,20 +8,25 @@ export const DIMENSIONED = new Set([
 export const norm = (s: unknown) =>
   s == null ? "" : String(s).trim().toUpperCase().replace(/\s+/g, " ");
 
-export function genToolId(
-  existingIds: string[], code: string, dia?: string | number,
-  length?: string | number, name?: string,
-): string {
+// The base ID before the serial suffix — e.g. "SC 0680 035" or "TP M8X1.25".
+// Exported so the API route can build a narrow existing-IDs query (only rows
+// matching this base) instead of fetching the whole master table.
+export function toolIdBase(code: string, dia?: string | number, length?: string | number, nameCode?: string): string {
   code = norm(code);
-  let base: string;
   if (DIMENSIONED.has(code) && dia != null && dia !== "") {
     const d = String(Math.round(Number(dia) * 100)).padStart(4, "0");
     const l = length != null && length !== ""
       ? String(Math.trunc(Number(length))).padStart(3, "0") : "000";
-    base = `${code} ${d} ${l}`;
-  } else {
-    base = `${code} ${norm(name)}`.trim();
+    return `${code} ${d} ${l}`;
   }
+  return `${code} ${norm(nameCode)}`.trim();
+}
+
+export function genToolId(
+  existingIds: string[], code: string, dia?: string | number,
+  length?: string | number, nameCode?: string,
+): string {
+  const base = toolIdBase(code, dia, length, nameCode);
   const has = (id: string) => existingIds.some((e) => e.toUpperCase() === id.toUpperCase());
   let nn = 1;
   while (has(`${base} ${String(nn).padStart(2, "0")}`)) nn++;
