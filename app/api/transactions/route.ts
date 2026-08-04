@@ -30,6 +30,12 @@ export async function POST(req: Request) {
       d_avail: d.avail, d_inuse: d.inuse, d_wregr: d.wregr,
       d_atregr: d.atregr, d_wscrap: d.wscrap, d_scrap: d.scrap,
       p_new_tool: txn.newTool ?? null,
+      p_part_no: txn.part_no ?? null,
+      p_work_order: txn.work_order ?? null,
+      p_po_no: txn.po_no ?? null,
+      p_brand: txn.brand ?? null,
+      p_unit_price: txn.unit_price ?? null,
+      p_regrind_cost: txn.regrind_cost ?? null,
     });
     if (error) results.push({ id: txn.id, ok: false, errors: [error.message], warnings: res.warnings });
     else results.push({ id: txn.id, ok: true, errors: [], warnings: res.warnings, txn_id: (applied as { txn_id: string }).txn_id });

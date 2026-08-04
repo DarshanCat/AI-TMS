@@ -15,6 +15,7 @@ const CHIP: Record<string, string> = {
 export default function InventoryTable({ rows, live }: { rows: Row[]; live: boolean }) {
   const [q, setQ] = useState("");
   const [status, setStatus] = useState("All");
+  const [showScrapped, setShowScrapped] = useState(false);
   const [sortKey, setSortKey] = useState<keyof Row>("tool_id");
   const [asc, setAsc] = useState(true);
 
@@ -25,6 +26,9 @@ export default function InventoryTable({ rows, live }: { rows: Row[]; live: bool
 
   const view = useMemo(() => {
     let out = rows;
+    // Scrapped tools are a permanent audit record, not live stock — hidden by
+    // default. Nothing is ever deleted; re-inwarding the same Tool ID revives it.
+    if (!showScrapped) out = out.filter((r) => r.status !== "None/Scrapped");
     if (status !== "All") out = out.filter((r) => r.status === status);
     if (q.trim()) {
       const s = q.toLowerCase();
@@ -54,9 +58,14 @@ export default function InventoryTable({ rows, live }: { rows: Row[]; live: bool
         <select className="select" style={{ maxWidth: 200 }} value={status} onChange={(e) => setStatus(e.target.value)}>
           {statuses.map((s) => <option key={s}>{s}</option>)}
         </select>
+        <label className="muted" style={{ fontSize: 12, display: "flex", alignItems: "center", gap: 6, cursor: "pointer" }}>
+          <input type="checkbox" checked={showScrapped} onChange={(e) => setShowScrapped(e.target.checked)} />
+          Show scrapped
+        </label>
         <div className="spacer" />
         <span className="muted" style={{ fontSize: 12 }}>
-          {view.length.toLocaleString()} shown{!live && " (sample)"}
+          {view.length.toLocaleString()} shown{!live && " (sample)"} · scrapped tools live in the{" "}
+          <a href="/dashboard/scrap">Scrap Register</a>
         </span>
       </div>
 

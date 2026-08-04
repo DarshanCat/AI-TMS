@@ -90,7 +90,7 @@ export const LOGS: LogSpec[] = [
     fields: [
       { key: "date", label: "Date", type: "date", scope: "header" },
       { key: "dispatchto", label: "Dispatch To", type: "select", scope: "header", options: ["Regrind", "Scrap"] },
-      { key: "vendor", label: "Regrind Vendor", type: "select", scope: "header", options: ["Sri Ram Cutting Tools", "Excellence"], maps: "tofrom" },
+      { key: "vendor", label: "Regrind Vendor", type: "text", scope: "header", placeholder: "type vendor name", maps: "tofrom" },
       { key: "dc", label: "DC No", type: "text", scope: "header", maps: "dc" },
       { key: "person", label: "Sent By (Store)", type: "text", scope: "header", maps: "person" },
       { key: "remarks", label: "Remarks", type: "text", scope: "row" },
@@ -101,7 +101,7 @@ export const LOGS: LogSpec[] = [
     blurb: "Reground tools coming back from the vendor into the store.",
     fields: [
       { key: "date", label: "Date", type: "date", scope: "header" },
-      { key: "vendor", label: "Regrind Vendor (From)", type: "select", scope: "header", options: ["Sri Ram Cutting Tools", "Excellence"], maps: "tofrom" },
+      { key: "vendor", label: "Regrind Vendor (From)", type: "text", scope: "header", placeholder: "type vendor name", maps: "tofrom" },
       { key: "dc", label: "DC No", type: "text", scope: "header", maps: "dc" },
       { key: "lifeafter", label: "Tool Life After Regrind (ENTER)", type: "number", scope: "row", maps: "life" },
       { key: "cost", label: "Regrind Cost", type: "number", scope: "row" },

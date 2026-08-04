@@ -73,17 +73,28 @@ export default function InboxForms() {
       const cond = mapped("condition", r);
       // Return log: only chip-off/broken conditions become CHIPOFF-style; "Good" is a plain receive
       const isDamage = active.txn === "CHIPOFF" || (active.txn === "RECEIVE" && (cond === "Chip-off" || cond === "Broken"));
+      // Dispatch form: "Scrap" routes to a SCRAP txn (never destructive — see engine/RPC);
+      // "Regrind" stays a DISPATCH to a free-text vendor.
+      const dispatchTo = header["dispatchto"] ?? "";
+      const isScrap = active.txn === "DISPATCH" && dispatchTo === "Scrap";
+      const type = isDamage ? "CHIPOFF" : isScrap ? "SCRAP" : active.txn;
       return {
         id: r.tool_id.trim(),
-        type: isDamage ? "CHIPOFF" : active.txn,
+        type,
         qty: Number(r.qty || "0"),
         person: mapped("person", r),
         machine: mapped("machine", r),
-        tofrom: mapped("tofrom", r),
+        tofrom: isScrap ? "Scrap Store" : mapped("tofrom", r),
         dc: mapped("dc", r),
         condition: isDamage ? (cond === "Broken" ? "Broken" : "Chip-off") : "",
         life: (() => { const l = mapped("life", r); return l ? Number(l) : null; })(),
         remark: r.vals["remarks"] ?? "",
+        part_no: header["partno"] ?? r.vals["partno"] ?? "",
+        work_order: header["wo"] ?? "",
+        po_no: header["po"] ?? "",
+        brand: r.vals["brand"] ?? "",
+        unit_price: r.vals["price"] ? Number(r.vals["price"]) : null,
+        regrind_cost: r.vals["cost"] ? Number(r.vals["cost"]) : null,
       };
     });
 
