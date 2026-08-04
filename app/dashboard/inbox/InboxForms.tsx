@@ -1,6 +1,7 @@
 "use client";
 import { useState } from "react";
 import { LOGS, type LogSpec, type FieldSpec } from "./logs";
+import ToolIdAutocomplete from "./ToolIdAutocomplete";
 
 type Vals = Record<string, string>;
 interface RowDraft { tool_id: string; qty: string; vals: Vals; }
@@ -69,7 +70,17 @@ export default function InboxForms() {
 
   async function post() {
     setBusy(true); setResults(null); setSummary("");
-    const txns = rows.filter((r) => r.tool_id.trim()).map((r) => {
+    const skippedNoName: string[] = [];
+    const txns = rows.filter((r) => {
+      if (!r.tool_id.trim()) return false;
+      // A row flagged "New Tool? = Y" without a name can't be created in the
+      // master — better to block it client-side than post a blank-named tool.
+      if (active.txn === "INWARD" && r.vals["newtool"] === "Y" && !r.vals["name"]?.trim()) {
+        skippedNoName.push(r.tool_id.trim());
+        return false;
+      }
+      return true;
+    }).map((r) => {
       const cond = mapped("condition", r);
       // Return log: only chip-off/broken conditions become CHIPOFF-style; "Good" is a plain receive
       const isDamage = active.txn === "CHIPOFF" || (active.txn === "RECEIVE" && (cond === "Chip-off" || cond === "Broken"));
@@ -78,6 +89,9 @@ export default function InboxForms() {
       const dispatchTo = header["dispatchto"] ?? "";
       const isScrap = active.txn === "DISPATCH" && dispatchTo === "Scrap";
       const type = isDamage ? "CHIPOFF" : isScrap ? "SCRAP" : active.txn;
+      // Inward + "New Tool? = Y" creates the tool_master/tool_inventory row;
+      // omitted for existing tools so their master fields aren't touched.
+      const isNewTool = active.txn === "INWARD" && r.vals["newtool"] === "Y";
       return {
         id: r.tool_id.trim(),
         type,
@@ -95,10 +109,19 @@ export default function InboxForms() {
         brand: r.vals["brand"] ?? "",
         unit_price: r.vals["price"] ? Number(r.vals["price"]) : null,
         regrind_cost: r.vals["cost"] ? Number(r.vals["cost"]) : null,
+        ...(isNewTool
+          ? { newTool: { name: r.vals["name"].trim(), type: r.vals["class"]?.trim() || "", loc: "VSPL store" } }
+          : {}),
       };
     });
 
-    if (txns.length === 0) { setBusy(false); setSummary("Add at least one tool ID."); return; }
+    if (txns.length === 0) {
+      setBusy(false);
+      setSummary(skippedNoName.length
+        ? `${skippedNoName.length} row(s) need a Tool Name (New Tool = Y) before posting.`
+        : "Add at least one tool ID.");
+      return;
+    }
 
     try {
       const res = await fetch("/api/transactions", {
@@ -107,7 +130,8 @@ export default function InboxForms() {
       });
       const data = await res.json();
       setResults(data.results ?? []);
-      setSummary(`Posted ${data.posted ?? 0} · blocked ${data.blocked ?? 0}`);
+      const skippedNote = skippedNoName.length ? ` · ${skippedNoName.length} skipped (missing Tool Name)` : "";
+      setSummary(`Posted ${data.posted ?? 0} · blocked ${data.blocked ?? 0}${skippedNote}`);
     } catch {
       setSummary("Network error — is the dev server running?");
     } finally { setBusy(false); }
@@ -161,8 +185,14 @@ export default function InboxForms() {
                   const res = resultFor(r.tool_id.trim());
                   return (
                     <tr key={i}>
-                      <td><input className="input" placeholder="e.g. SC 0680 035 01"
-                        value={r.tool_id} onChange={(e) => setRTool(i, e.target.value)} /></td>
+                      <td>
+                        <ToolIdAutocomplete
+                          value={r.tool_id}
+                          onChange={(v) => setRTool(i, v)}
+                          placeholder={active.key === "inward" ? "new or existing ID" : "e.g. SC 0680 035 01"}
+                          allowNew={active.key === "inward"}
+                        />
+                      </td>
                       <td><input className="input num" type="number" min={1}
                         value={r.qty} onChange={(e) => setRQty(i, e.target.value)} /></td>
                       {rowFields.map((f) => (

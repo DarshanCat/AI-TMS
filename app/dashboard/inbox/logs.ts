@@ -27,7 +27,8 @@ export const LOGS: LogSpec[] = [
     fields: [
       { key: "date", label: "Date", type: "date", scope: "header" },
       { key: "newtool", label: "New Tool?", type: "select", scope: "row", options: ["N", "Y"] },
-      { key: "class", label: "Class", type: "text", scope: "row" },
+      { key: "name", label: "Tool Name (required if new)", type: "text", scope: "row" },
+      { key: "class", label: "Class / Type", type: "text", scope: "row" },
       { key: "supplier", label: "Supplier Name", type: "text", scope: "header", maps: "tofrom" },
       { key: "supcode", label: "Supplier Code", type: "text", scope: "header" },
       { key: "po", label: "PO No", type: "text", scope: "header" },
