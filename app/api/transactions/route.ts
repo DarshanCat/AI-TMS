@@ -45,7 +45,12 @@ export async function POST(req: Request) {
       p_life: txn.life ?? null, p_remarks: res.remark ?? "",
       d_avail: d.avail, d_inuse: d.inuse, d_wregr: d.wregr,
       d_atregr: d.atregr, d_wscrap: d.wscrap, d_scrap: d.scrap,
-      p_new_tool: txn.newTool ? { name: txn.newTool.name, type: txn.newTool.type, loc: txn.newTool.loc } : null,
+      p_new_tool: txn.newTool
+        ? {
+            name: txn.newTool.name, type: txn.newTool.type, loc: txn.newTool.loc,
+            typecode: txn.newTool.typecode ?? "", dia: txn.newTool.dia ?? "", length: txn.newTool.length ?? "",
+          }
+        : null,
       p_part_no: txn.part_no ?? null,
       p_work_order: txn.work_order ?? null,
       p_po_no: txn.po_no ?? null,

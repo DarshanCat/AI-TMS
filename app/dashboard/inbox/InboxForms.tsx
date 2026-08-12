@@ -140,6 +140,7 @@ export default function InboxForms() {
                 dia: r.vals["dia"] ? Number(r.vals["dia"]) : null,
                 length: r.vals["length"] ? Number(r.vals["length"]) : null,
                 nameCode: r.vals["namecode"]?.trim() || "",
+                supplierCode: header["supcode"]?.trim() || "",
               },
             }
           : {}),

@@ -9,7 +9,7 @@ export default async function DashboardPage() {
 
   const rows = inv ?? [];
   const has = rows.length > 0;
-  const sum = (k: "avail" | "inuse" | "wregr" | "atregr" | "scrap") =>
+  const sum = (k: "avail" | "inuse" | "wregr" | "atregr" | "wscrap" | "scrap") =>
     rows.reduce((a, r) => a + (r[k] as number), 0);
 
   // live data when present; representative sample while data is being structured

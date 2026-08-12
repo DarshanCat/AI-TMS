@@ -14,6 +14,7 @@ const NAV: [string, string][] = [
   ["Forecasting", "/dashboard/forecasting"],
   ["Reports", "/dashboard/reports"],
   ["Daily", "/dashboard/daily"],
+  ["Audit Records", "/dashboard/audit"],
 ];
 
 export default async function DashboardLayout({ children }: { children: React.ReactNode }) {

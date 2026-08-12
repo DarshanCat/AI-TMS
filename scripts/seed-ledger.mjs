@@ -1,14 +1,11 @@
 /**
- * Replay the real Tool_Ledger.xlsx into Supabase — once, after seed-tools.mjs.
+ * Replay Tool_Ledger.xlsx into Supabase — permissive historical replay,
+ * mirrors tms_engine.py's replay() (no blocking; your own audit log shows
+ * anomalies flagged and posted anyway).
  *
- * Mirrors tms_engine.py's replay(): permissive, no blocking. Your engine's
- * own anomaly log shows rows that were flagged AND posted anyway ("flag
- * don't hold"). This script reproduces that exact historical state rather
- * than re-validating 430 real transactions against today's stricter rules.
- *
- * Safe by default: preview only, no writes unless --commit. Re-running with
- * --commit will duplicate ledger rows (this is a historical replay, not an
- * idempotent upsert) — so run it ONCE, after confirming the dry-run preview.
+ * Handles: INWARD, ISSUE (internal + subcontractor + regrind-dispatch +
+ * scrap-dispatch), CHIPOFF, RETURN (-> RECEIVE or RECEIPT), and ADJUST
+ * (audit stock corrections — signed delta straight onto Available).
  *
  * Usage:
  *   node --env-file=.env.local scripts/seed-ledger.mjs ./Tool_Ledger.xlsx
@@ -35,12 +32,13 @@ console.log(`Read ${rows.length} raw ledger rows.`);
 
 function translate(r) {
   const rawType = String(r["Txn Type"] ?? "").trim().toUpperCase();
-  const iof = String(r["Issued To / From"] ?? "").trim();
-  const qty = Math.abs(Number(r["Qty (+/-)"]) || 0);
+  const iof = String(r["Issued To / From"] ?? "").trim().toUpperCase();
+  const rawQty = Number(r["Qty (+/-)"]) || 0;
+  const qty = Math.abs(rawQty);
   const tool_id = String(r["Tool ID"] ?? "").trim();
   const ts = r["Timestamp"] instanceof Date ? r["Timestamp"].toISOString() : new Date(r["Timestamp"]).toISOString();
 
-  let type, tofrom = "", machine = "", condition = "";
+  let type, tofrom = "", machine = "", condition = "", signedQty = qty;
   const supplier = String(r["Supplier"] ?? "").trim();
 
   if (rawType === "INWARD") {
@@ -50,25 +48,29 @@ function translate(r) {
     const cond = String(r["Condition"] ?? "").toUpperCase();
     condition = cond.includes("BROKEN") ? "Broken" : "Chip-off";
     machine = String(r["Machine"] ?? "").trim();
+  } else if (rawType === "ADJUST") {
+    // audit stock correction — signed, applies directly to Available
+    type = "ADJUST"; tofrom = "Audit Adjustment"; signedQty = rawQty;
   } else if (rawType === "ISSUE") {
-    if (iof.toUpperCase().includes("REGRIND")) {
+    if (iof.includes("SUBCON")) {
+      type = "ISSUE"; machine = supplier || iof.replace(/^OPERATIONS:\s*/i, "").trim();
+    } else if (iof.includes("REGRIND")) {
       type = "DISPATCH"; tofrom = supplier || "Sri Ram Cutting Tools";
-    } else if (iof.toUpperCase().includes("SCRAP")) {
+    } else if (iof.includes("SCRAP")) {
       type = "SCRAP"; tofrom = "Scrap Store";
-    } else if (iof.toUpperCase() === "INTERNAL") {
-      type = "ISSUE"; machine = String(r["Machine"] ?? "").trim();
     } else {
-      type = "ISSUE"; machine = supplier || iof.replace(/^Supplier:\s*/i, "").trim();
+      // "Internal", "Operations", "Operations: OPERATION(S)", "Operations: OPERATOR" — all internal
+      type = "ISSUE"; machine = String(r["Machine"] ?? "").trim();
     }
   } else if (rawType === "RETURN") {
-    if (iof.toUpperCase().includes("REGRIND")) { type = "RECEIPT"; tofrom = supplier; }
+    if (iof.includes("REGRIND")) { type = "RECEIPT"; tofrom = supplier; }
     else { type = "RECEIVE"; machine = String(r["Machine"] ?? "").trim(); }
   } else {
     return null;
   }
 
   return {
-    tool_id, type, qty, ts,
+    tool_id, type, qty, signedQty, ts,
     person: String(r["Person"] ?? "").trim(),
     issued_by: String(r["Store Person"] ?? "").trim(),
     machine, tofrom, condition,
@@ -81,7 +83,23 @@ function translate(r) {
   };
 }
 
-const translated = rows.map(translate).filter(Boolean).sort((a, b) => a.txn_no - b.txn_no);
+const translatedRaw = rows.map(translate).filter(Boolean).sort((a, b) => a.txn_no - b.txn_no);
+
+// collapse exact duplicates (same tool + type + qty + timestamp) — these are
+// spreadsheet artifacts (e.g. a copy-pasted row), not 16 real transactions
+// happening at the identical millisecond.
+const seen = new Set();
+const translated = [];
+let dupesCollapsed = 0;
+for (const t of translatedRaw) {
+  const key = `${t.tool_id}|${t.type}|${t.qty}|${t.ts}`;
+  if (seen.has(key)) { dupesCollapsed++; continue; }
+  seen.add(key);
+  translated.push(t);
+}
+if (dupesCollapsed > 0) {
+  console.log(`⚠ Collapsed ${dupesCollapsed} exact-duplicate rows (same tool+type+qty+timestamp — spreadsheet artifacts).`);
+}
 const skipped = rows.length - translated.length;
 console.log(`Translated ${translated.length} rows${skipped ? ` (skipped ${skipped} unrecognized)` : ""}.`);
 
@@ -96,12 +114,13 @@ if (!commit) {
   process.exit(0);
 }
 
-function deltaFor(type, qty, pool) {
+function deltaFor(type, qty, signedQty, pool) {
   const d = { avail: 0, inuse: 0, wregr: 0, atregr: 0, wscrap: 0, scrap: 0 };
   switch (type) {
     case "INWARD": d.avail = qty; break;
     case "ISSUE": d.avail = -qty; d.inuse = qty; break;
     case "RECEIVE": d.inuse = -qty; d.avail = qty; break;
+    case "ADJUST": d.avail = signedQty; break; // signed — audit correction, direct to Available
     case "CHIPOFF": {
       const fromUse = Math.min(pool.inuse, qty), fromAvail = qty - fromUse;
       d.inuse = -fromUse; d.avail = -fromAvail;
@@ -136,17 +155,25 @@ async function getPool(tool_id) {
 }
 
 console.log(`\nReplaying ${translated.length} transactions in chronological order…`);
-let done = 0, failed = 0;
+let done = 0, failed = 0, negativeWarnings = 0;
 for (const t of translated) {
   const p = await getPool(t.tool_id);
   if (!p) { failed++; console.log(`  ✗ ${t.tool_id}: not in master, skipped`); continue; }
 
   let d;
   if (t.type === "CHIPOFF") {
-    d = deltaFor("CHIPOFF", t.qty, p);
+    d = deltaFor("CHIPOFF", t.qty, t.signedQty, p);
     if (t.condition === "Broken") d.wscrap = t.qty; else d.wregr = t.qty;
   } else {
-    d = deltaFor(t.type, t.qty, p);
+    d = deltaFor(t.type, t.qty, t.signedQty, p);
+  }
+
+  // ADJUST can in theory push a tool negative if the sheet has an error —
+  // surface it instead of silently going below zero
+  if (t.type === "ADJUST" && (p.avail + d.avail) < 0) {
+    negativeWarnings++;
+    console.log(`  ⚠ ${t.tool_id}: ADJUST would take Available below 0 (${p.avail} ${d.avail >= 0 ? "+" : ""}${d.avail}) — clamped to 0`);
+    d.avail = -p.avail;
   }
 
   const { error } = await supabase.rpc("apply_transaction", {
@@ -157,15 +184,14 @@ for (const t of translated) {
     d_atregr: d.atregr, d_wscrap: d.wscrap, d_scrap: d.scrap,
     p_new_tool: null, p_part_no: t.part_no, p_work_order: t.work_order,
     p_po_no: null, p_brand: null, p_unit_price: null, p_regrind_cost: null,
-    p_issued_by: t.issued_by,
-    p_ts: t.ts,
+    p_issued_by: t.issued_by, p_ts: t.ts,
   });
 
   if (error) { failed++; console.log(`  ✗ ${t.tool_id} (${t.type}): ${error.message}`); continue; }
 
   for (const k of Object.keys(d)) p[k] = (p[k] ?? 0) + d[k];
   done++;
-  if (done % 50 === 0) console.log(`  ${done}/${translated.length}`);
+  if (done % 100 === 0) console.log(`  ${done}/${translated.length}`);
 }
 
-console.log(`\nDone. ${done} posted, ${failed} failed.`);
+console.log(`\nDone. ${done} posted, ${failed} failed, ${negativeWarnings} ADJUST rows clamped at 0.`);

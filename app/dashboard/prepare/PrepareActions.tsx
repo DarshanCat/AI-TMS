@@ -33,6 +33,12 @@ export default function PrepareActions({
   const [busyId, setBusyId] = useState<string | null>(null);
   const [toast, setToast] = useState<{ ok: boolean; t: string } | null>(null);
 
+  // live KPIs — recomputed from `data`, so they update the instant a row is
+  // removed after a successful action, without needing a page refresh.
+  const totalOut = data.inUse.length + data.atVendor.length;
+  const overdueCount = [...data.inUse, ...data.atVendor].filter((r) => urgencyOf(daysSince(r.since)) === "overdue").length;
+  const dueSoonCount = [...data.inUse, ...data.atVendor].filter((r) => urgencyOf(daysSince(r.since)) === "due-soon").length;
+
   async function act(section: SectionKey, row: PrepRow, txnType: string, tofrom: string, machine: string) {
     setBusyId(row.tool_id); setToast(null);
     const txn = { id: row.tool_id, type: txnType, qty: 1, person, machine, tofrom, dc: "", condition: "", life: null, remark: "Posted via Prepare" };
@@ -54,7 +60,6 @@ export default function PrepareActions({
     } finally { setBusyId(null); }
   }
 
-  // sort each list so overdue rows float to the top
   const sortByUrgency = (rows: PrepRow[]) =>
     [...rows].sort((a, b) => {
       const rank = { overdue: 0, "due-soon": 1, fresh: 2 };
@@ -65,6 +70,13 @@ export default function PrepareActions({
 
   return (
     <>
+      <div className="grid-kpi" style={{ marginBottom: 20 }}>
+        <div className="kpi accent"><div className="k">Tools out</div><div className="v">{totalOut}</div></div>
+        <div className="kpi"><div className="k">Due soon (7d+)</div><div className="v">{dueSoonCount}</div></div>
+        <div className="kpi"><div className="k">Overdue (14d+)</div><div className="v">{overdueCount}</div></div>
+        <div className="kpi"><div className="k">Waiting dispatch</div><div className="v">{data.waitingRegrind.length}</div></div>
+      </div>
+
       {toast && (
         <div className="panel" style={{ padding: "10px 14px", marginBottom: 14,
           borderColor: toast.ok ? "var(--ok)" : "var(--danger)", color: toast.ok ? "var(--ok)" : "var(--danger)", fontSize: 13 }}>
@@ -82,10 +94,10 @@ export default function PrepareActions({
             <table className="tbl">
               <thead><tr><th>Tool ID</th><th>Name</th><th>Machine</th><th>Taken by</th><th>Issued by</th><th>Since</th><th className="right">Out</th><th>Status</th><th></th></tr></thead>
               <tbody>
-                {sortByUrgency(data.inUse).map((r) => {
+                {sortByUrgency(data.inUse).map((r, i) => {
                   const d = daysSince(r.since); const u = urgencyOf(d);
                   return (
-                    <tr key={r.tool_id}>
+                    <tr key={`${r.tool_id}-${i}`}>
                       <td className="id">{r.tool_id}</td>
                       <td className="muted">{r.name || "—"}</td>
                       <td className="id" style={{ fontSize: 12 }}>{r.where}</td>
@@ -118,10 +130,10 @@ export default function PrepareActions({
             <table className="tbl">
               <thead><tr><th>Tool ID</th><th>Name</th><th>Vendor</th><th>Sent by</th><th>Since</th><th className="right">Out</th><th>Status</th><th></th></tr></thead>
               <tbody>
-                {sortByUrgency(data.atVendor).map((r) => {
+                {sortByUrgency(data.atVendor).map((r, i) => {
                   const d = daysSince(r.since); const u = urgencyOf(d);
                   return (
-                    <tr key={r.tool_id}>
+                    <tr key={`${r.tool_id}-${i}`}>
                       <td className="id">{r.tool_id}</td>
                       <td className="muted">{r.name || "—"}</td>
                       <td className="id" style={{ fontSize: 12 }}>{r.where}</td>
@@ -153,8 +165,8 @@ export default function PrepareActions({
             <table className="tbl">
               <thead><tr><th>Tool ID</th><th>Name</th><th>Vendor</th><th></th></tr></thead>
               <tbody>
-                {data.waitingRegrind.map((r) => (
-                  <tr key={r.tool_id}>
+                {data.waitingRegrind.map((r, i) => (
+                  <tr key={`${r.tool_id}-${i}`}>
                     <td className="id">{r.tool_id}</td>
                     <td className="muted">{r.name || "—"}</td>
                     <td>
