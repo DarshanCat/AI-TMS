@@ -19,6 +19,16 @@
  * common variants per field (see CANDIDATES below). If it can't confidently
  * find Tool ID / Name / Type, it stops and tells you what it saw instead of
  * guessing wrong on 1,343 rows.
+ *
+ * IMPORTANT: this script seeds tool_master + a BLANK tool_inventory row only
+ * (avail/inuse/wregr/atregr/wscrap/scrap/owned all start at 0). It never
+ * writes a live quantity into tool_inventory, even if the sheet has a
+ * "Current Stock" / "Owned" / "Qty" style column. Real quantities must come
+ * from replaying the actual transaction history via seed-ledger.mjs
+ * afterwards (INWARD/ADJUST/ISSUE/... build up the true per-bucket counts).
+ * Seeding a lump quantity here and then replaying the ledger on top of it
+ * double-counts and produces exactly the Available/In-Use drift this
+ * comment is here to prevent.
  */
 import { readFileSync } from "node:fs";
 import { createClient } from "@supabase/supabase-js";
@@ -37,7 +47,6 @@ const CANDIDATES = {
   tool_id: ["tool id", "toolid", "id", "tool no", "tool code"],
   name: ["name", "tool name", "description", "desc"],
   type: ["type", "category", "tool type", "class"],
-  qty: ["qty", "quantity", "owned", "stock", "on hand", "opening stock"],
 };
 
 function normHeader(h) {
@@ -75,7 +84,6 @@ const col = {
   name: findColumn(headers, CANDIDATES.name),
   type: findColumn(headers, CANDIDATES.type),
   loc: -1,
-  qty: findColumn(headers, CANDIDATES.qty),
 };
 
 console.log("Detected columns:");
@@ -96,7 +104,6 @@ const parsed = dataRows
     name: String(r[col.name] ?? "").trim(),
     type: col.type !== -1 ? String(r[col.type] ?? "").trim() : "",
     loc: col.loc !== -1 ? String(r[col.loc] ?? "").trim() || "VSPL store" : "VSPL store",
-    qty: col.qty !== -1 ? Math.max(0, Math.round(Number(r[col.qty]) || 0)) : 0,
   }))
   .filter((r) => r.tool_id);
 
@@ -139,10 +146,13 @@ for (let i = 0; i < parsed.length; i += BATCH) {
   const { error: mErr } = await supabase.from("tool_master").upsert(masterRows, { onConflict: "tool_id" });
   if (mErr) { console.error("tool_master upsert failed:", mErr.message); process.exit(1); }
 
+  // Blank slate — every counter starts at 0. Real quantities are built up
+  // entirely by replaying the ledger (seed-ledger.mjs) on top of this row,
+  // never by a lump quantity dropped in at seed time.
   const invRows = batch.map((r) => ({
     tool_id: r.tool_id, name: r.name, type: r.type, loc: r.loc,
-    avail: r.qty, inuse: 0, wregr: 0, atregr: 0, wscrap: 0, scrap: 0,
-    owned: r.qty, status: r.qty > 0 ? "Available" : "Available",
+    avail: 0, inuse: 0, wregr: 0, atregr: 0, wscrap: 0, scrap: 0,
+    owned: 0, status: "Available",
   }));
   const { error: iErr } = await supabase
     .from("tool_inventory")
