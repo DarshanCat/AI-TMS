@@ -1,96 +1,194 @@
-/**
- * Load the three report sheets from Tool_Master.xlsx (Broken Tools, Sent to
- * Regrinding, Scrap History) into their own reference tables. These are
- * audit snapshots, not append-only — each run fully replaces prior content.
- *
- * Usage:
- *   node --env-file=.env.local scripts/seed-audit-sheets.mjs ./Tool_Master.xlsx
- *   node --env-file=.env.local scripts/seed-audit-sheets.mjs ./Tool_Master.xlsx --commit
- */
-import { readFileSync } from "node:fs";
-import { createClient } from "@supabase/supabase-js";
-import * as XLSX from "xlsx";
+"use client";
+import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
+import { createClient } from "@/lib/supabase/client";
 
-const args = process.argv.slice(2);
-const commit = args.includes("--commit");
-const filePath = args.find((a) => !a.startsWith("--"));
-if (!filePath) {
-  console.error("Usage: node --env-file=.env.local scripts/seed-audit-sheets.mjs <Tool_Master.xlsx> [--commit]");
-  process.exit(1);
+export interface ToolMatch {
+  tool_id: string;
+  name: string | null;
+  type: string | null;
+  status: string;
 }
 
-const buf = readFileSync(filePath);
-const wb = XLSX.read(buf, { type: "buffer", cellDates: true });
+const STATUS_CHIP: Record<string, string> = {
+  "Available": "chip-avail", "In Use": "chip-inuse", "Waiting Regrind": "chip-wregr",
+  "At Regrind": "chip-atregr", "Waiting Scrap": "chip-wscrap", "None/Scrapped": "chip-scrap",
+};
 
-function sheetRows(name) {
-  const sheet = wb.Sheets[name];
-  if (!sheet) { console.log(`  (sheet "${name}" not found — skipping)`); return []; }
-  return XLSX.utils.sheet_to_json(sheet, { defval: null });
+function lev(a: string, b: string): number {
+  const dp: number[][] = Array.from({ length: a.length + 1 }, () => new Array(b.length + 1).fill(0));
+  for (let i = 0; i <= a.length; i++) dp[i][0] = i;
+  for (let j = 0; j <= b.length; j++) dp[0][j] = j;
+  for (let i = 1; i <= a.length; i++)
+    for (let j = 1; j <= b.length; j++)
+      dp[i][j] = a[i - 1] === b[j - 1] ? dp[i - 1][j - 1]
+        : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+  return dp[a.length][b.length];
 }
 
-const toDate = (v) => (v instanceof Date ? v.toISOString().slice(0, 10) : v ? String(v).slice(0, 10) : null);
+export default function ToolIdAutocomplete({
+  value, onChange, placeholder, allowNew = false, onResolved,
+}: {
+  value: string;
+  onChange: (v: string) => void;
+  placeholder?: string;
+  allowNew?: boolean;
+  onResolved?: (match: ToolMatch | null) => void;
+}) {
+  const [matches, setMatches] = useState<ToolMatch[]>([]);
+  const [fuzzyMatches, setFuzzyMatches] = useState<ToolMatch[]>([]);
+  const [open, setOpen] = useState(false);
+  const [loading, setLoading] = useState(false);
+  const [searched, setSearched] = useState(false);
+  const [rect, setRect] = useState<{ top: number; left: number; width: number } | null>(null);
+  const boxRef = useRef<HTMLDivElement>(null);
+  const inputRef = useRef<HTMLInputElement>(null);
+  const dropdownRef = useRef<HTMLDivElement>(null);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-const broken = sheetRows("Broken Tools").map((r) => ({
-  tool_id: String(r["Tool ID"] ?? "").trim(),
-  event_date: toDate(r["Date"]),
-  qty: r["Qty"] != null ? Number(r["Qty"]) : null,
-  condition: r["Condition"] ?? null,
-  machine: r["Machine"] ?? null,
-  reported_by: r["Reported By"] ?? null,
-  received_by: r["Received By"] ?? null,
-  remarks: r["Remarks"] ?? null,
-})).filter((r) => r.tool_id);
+  useEffect(() => {
+    const q = value.trim();
+    if (debounceRef.current) clearTimeout(debounceRef.current);
 
-const regrind = sheetRows("Sent to Regrinding").map((r) => ({
-  tool_id: String(r["Tool ID"] ?? "").trim(),
-  event_date: toDate(r["Date"]),
-  qty: r["Qty"] != null ? Number(r["Qty"]) : null,
-  vendor: r["Regrind Vendor"] ?? null,
-  dc_no: r["DC No"] != null ? String(r["DC No"]) : null,
-  sent_by: r["Sent By"] ?? null,
-  remarks: r["Remarks"] ?? null,
-})).filter((r) => r.tool_id);
+    debounceRef.current = setTimeout(async () => {
+      if (q.length < 2) { setMatches([]); setFuzzyMatches([]); setSearched(false); setLoading(false); return; }
+      setLoading(true);
+      const supabase = createClient();
+      const { data } = await supabase
+        .from("tool_inventory")
+        .select("tool_id,name,type,status")
+        .ilike("tool_id", `%${q}%`)
+        .order("tool_id", { ascending: true })
+        .limit(30);
+      const upperQ = q.toUpperCase();
+      const ranked = ((data as ToolMatch[]) ?? []).sort((a, b) => {
+        const aStarts = a.tool_id.toUpperCase().startsWith(upperQ) ? 0 : 1;
+        const bStarts = b.tool_id.toUpperCase().startsWith(upperQ) ? 0 : 1;
+        if (aStarts !== bStarts) return aStarts - bStarts;
+        return a.tool_id.localeCompare(b.tool_id);
+      }).slice(0, 8);
+      setMatches(ranked);
 
-const scrap = sheetRows("Scrap History").map((r) => ({
-  tool_id: String(r["Tool ID"] ?? "").trim(),
-  event_date: toDate(r["Date"]),
-  qty: r["Qty"] != null ? Number(r["Qty"]) : null,
-  status: r["Status"] ?? null,
-  condition_vendor: r["Condition/Vendor"] ?? null,
-  dc_no: r["DC No"] != null ? String(r["DC No"]) : null,
-  person: r["Person"] ?? null,
-  remarks: r["Remarks"] ?? null,
-})).filter((r) => r.tool_id);
+      // no substring hit at all -> broaden the net and rank by edit distance,
+      // so a wrong middle segment (e.g. "100" vs the real "090"/"140") or a
+      // dropped/added letter still surfaces the real, closest tool instead
+      // of a dead end.
+      if (ranked.length === 0 && !allowNew) {
+        const firstTwo = upperQ.slice(0, 2);
+        const { data: broad } = await supabase
+          .from("tool_inventory")
+          .select("tool_id,name,type,status")
+          .ilike("tool_id", `${firstTwo}%`)
+          .limit(300);
+        const scored = ((broad as ToolMatch[]) ?? [])
+          .map((m) => ({ m, d: lev(upperQ, m.tool_id.toUpperCase()) }))
+          .sort((a, b) => a.d - b.d)
+          .filter((x) => x.d <= Math.max(4, Math.ceil(upperQ.length * 0.35)))
+          .slice(0, 6)
+          .map((x) => x.m);
+        setFuzzyMatches(scored);
+      } else {
+        setFuzzyMatches([]);
+      }
 
-console.log(`Broken Tools: ${broken.length} rows`);
-console.log(`Sent to Regrinding: ${regrind.length} rows`);
-console.log(`Scrap History: ${scrap.length} rows`);
-console.log("\nPreview (first 2 of each):");
-console.log("Broken:", broken.slice(0, 2));
-console.log("Regrind:", regrind.slice(0, 2));
-console.log("Scrap:", scrap.slice(0, 2));
+      setLoading(false);
+      setSearched(true);
+    }, 250);
 
-if (!commit) {
-  console.log("\nDry run only — nothing written. Re-run with --commit to load these into Supabase.");
-  process.exit(0);
+    return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
+  }, [value, allowNew]);
+
+  useEffect(() => {
+    function onClickOutside(e: MouseEvent) {
+      const t = e.target as Node;
+      if (boxRef.current?.contains(t)) return;
+      if (dropdownRef.current?.contains(t)) return;
+      setOpen(false);
+    }
+    document.addEventListener("mousedown", onClickOutside);
+    return () => document.removeEventListener("mousedown", onClickOutside);
+  }, []);
+
+  function updateRect() {
+    if (!inputRef.current) return;
+    const r = inputRef.current.getBoundingClientRect();
+    setRect({ top: r.bottom + 4, left: r.left, width: r.width });
+  }
+
+  useEffect(() => {
+    if (!open) return;
+    updateRect();
+    window.addEventListener("scroll", updateRect, true);
+    window.addEventListener("resize", updateRect);
+    return () => {
+      window.removeEventListener("scroll", updateRect, true);
+      window.removeEventListener("resize", updateRect);
+    };
+  }, [open]);
+
+  const exactMatch = matches.some((m) => m.tool_id.toUpperCase() === value.trim().toUpperCase());
+
+  useEffect(() => {
+    const m = matches.find((x) => x.tool_id.toUpperCase() === value.trim().toUpperCase());
+    onResolved?.(m ?? null);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [matches, value]);
+
+  const showNoMatch = !allowNew && searched && !loading && value.trim().length >= 2 && matches.length === 0 && fuzzyMatches.length === 0;
+  const showDropdown = open && value.trim().length >= 2 && !exactMatch && (matches.length > 0 || fuzzyMatches.length > 0);
+  const list = matches.length > 0 ? matches : fuzzyMatches;
+  const isFuzzy = matches.length === 0 && fuzzyMatches.length > 0;
+
+  return (
+    <div ref={boxRef} style={{ position: "relative" }}>
+      <input
+        ref={inputRef}
+        className="input"
+        placeholder={placeholder ?? "e.g. SC 0680 035 01"}
+        value={value}
+        onChange={(e) => { onChange(e.target.value); setOpen(true); }}
+        onFocus={() => setOpen(true)}
+        style={showNoMatch ? { borderColor: "var(--danger, #c0392b)" } : undefined}
+      />
+      {showNoMatch && (
+        <div className="muted" style={{ fontSize: 11, color: "var(--danger, #c0392b)", marginTop: 2 }}>
+          No ID found, even allowing for a spelling mistake — check the tool room, or Inward it first if it&apos;s new.
+        </div>
+      )}
+      {showDropdown && rect && typeof document !== "undefined" && createPortal(
+        <div ref={dropdownRef} className="panel" style={{
+          position: "fixed", top: rect.top, left: rect.left, width: rect.width, zIndex: 9999,
+          maxHeight: 280, overflow: "auto", boxShadow: "0 6px 20px rgba(0,0,0,0.18)", background: "var(--panel)",
+        }}>
+          {isFuzzy && (
+            <div className="muted" style={{ fontSize: 11, padding: "6px 10px", borderBottom: "1px solid var(--line)", background: "var(--panel-2)" }}>
+              No exact match — closest real Tool IDs (check spelling):
+            </div>
+          )}
+          {list.map((m) => (
+            <div key={m.tool_id}
+              onClick={() => { onChange(m.tool_id); setOpen(false); }}
+              style={{
+                padding: "8px 10px", cursor: "pointer", display: "flex",
+                alignItems: "center", justifyContent: "space-between", gap: 8,
+                borderBottom: "1px solid var(--line)", fontSize: 13,
+              }}
+              onMouseDown={(e) => e.preventDefault()}
+            >
+              <div style={{ minWidth: 0 }}>
+                <div className="id">{m.tool_id}</div>
+                <div className="muted" style={{ fontSize: 11, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis" }}>
+                  {m.name}
+                </div>
+              </div>
+              <span className={"chip " + (STATUS_CHIP[m.status] ?? "chip-scrap")} style={{ flexShrink: 0 }}>
+                {m.status}
+              </span>
+            </div>
+          ))}
+        </div>,
+        document.body,
+      )}
+    </div>
+  );
 }
-
-const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
-const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
-if (!url || !key) { console.error("Missing Supabase env vars."); process.exit(1); }
-const supabase = createClient(url, key);
-
-async function replace(table, rows) {
-  const { error: delErr } = await supabase.from(table).delete().gte("id", 0);
-  if (delErr) { console.error(`${table} delete failed:`, delErr.message); process.exit(1); }
-  if (rows.length === 0) return;
-  const { error: insErr } = await supabase.from(table).insert(rows);
-  if (insErr) { console.error(`${table} insert failed:`, insErr.message); process.exit(1); }
-  console.log(`${table}: loaded ${rows.length} rows`);
-}
-
-await replace("broken_tools_log", broken);
-await replace("regrind_dispatch_log", regrind);
-await replace("scrap_history_log", scrap);
-
-console.log("\nDone.");

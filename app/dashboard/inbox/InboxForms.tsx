@@ -2,9 +2,11 @@
 import { useState } from "react";
 import { LOGS, type LogSpec, type FieldSpec } from "./logs";
 import ToolIdAutocomplete from "./ToolIdAutocomplete";
+import { parseLogFile } from "./parseLogFile";
+import PendingReturns from "./PendingReturns";
 
 type Vals = Record<string, string>;
-interface RowDraft { rowKey: string; tool_id: string; qty: string; vals: Vals; generatedId?: string; resolvedName?: string; }
+interface RowDraft { rowKey: string; tool_id: string; qty: string; vals: Vals; resolvedName?: string; }
 interface PostResult { id: string; ok: boolean; errors: string[]; warnings: string[]; txn_id?: string; rowKey?: string; }
 
 const today = () => new Date().toISOString().slice(0, 10);
@@ -47,6 +49,8 @@ export default function InboxForms() {
   const [results, setResults] = useState<PostResult[] | null>(null);
   const [busy, setBusy] = useState(false);
   const [summary, setSummary] = useState("");
+  const [uploadWarnings, setUploadWarnings] = useState<string[]>([]);
+  const [returnsRefresh, setReturnsRefresh] = useState(0);
 
   const headerFields = active.fields.filter((f) => f.scope === "header");
   const rowFields = active.fields.filter((f) => f.scope === "row");
@@ -54,33 +58,45 @@ export default function InboxForms() {
 
   function pick(log: LogSpec) {
     setActive(log); setHeader(initHeader(log)); setRows([initRow(log)]);
-    setResults(null); setSummary("");
+    setResults(null); setSummary(""); setUploadWarnings([]);
   }
   const setH = (k: string, v: string) => setHeader((h) => ({ ...h, [k]: v }));
-  const setRTool = (i: number, v: string) => setRows((rs) => rs.map((r, j) => j === i ? { ...r, tool_id: v } : r));
+  const setRTool = (i: number, v: string) => setRows((rs) => rs.map((r, j) => j === i ? { ...r, tool_id: v, resolvedName: undefined } : r));
   const setRQty = (i: number, v: string) => setRows((rs) => rs.map((r, j) => j === i ? { ...r, qty: v } : r));
   const setRVal = (i: number, k: string, v: string) =>
     setRows((rs) => rs.map((r, j) => j === i ? { ...r, vals: { ...r.vals, [k]: v } } : r));
   const addRow = () => setRows((rs) => [...rs, initRow(active)]);
   const delRow = (i: number) => setRows((rs) => rs.length === 1 ? rs : rs.filter((_, j) => j !== i));
 
-
-  async function generateId(i: number) {
-    const r = rows[i];
-    const typecode = r.vals["typecode"]?.trim();
-    if (!typecode) { setSummary("Fill Type Code first."); return; }
-    const params = new URLSearchParams({
-      typecode,
-      dia: r.vals["dia"] ?? "", length: r.vals["length"] ?? "", namecode: r.vals["namecode"] ?? "",
+  function addReturnRow(toolId: string, machine: string, person: string, qty: number) {
+    setRows((rs) => {
+      const base = rs.length === 1 && !rs[0].tool_id.trim() ? [] : rs;
+      const row = initRow(active);
+      row.tool_id = toolId;
+      row.qty = String(qty);
+      return [...base, row];
     });
-    try {
-      const res = await fetch(`/api/generate-tool-id?${params}`);
-      const data = await res.json();
-      if (data.id) setRows((rs) => rs.map((row, j) => j === i ? { ...row, generatedId: data.id } : row));
-      else setSummary(data.error ?? "Could not generate ID.");
-    } catch {
-      setSummary("Network error generating ID.");
+    setHeader((h) => ({
+      ...h,
+      ...(!h["machine"] ? { machine: machine } : {}),
+      ...(!h["person"] ? { person: person } : {}),
+    }));
+  }
+
+  async function handleFileUpload(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = "";
+    if (!file) return;
+    const parsed = await parseLogFile(file, active);
+    if (parsed.rows.length === 0) {
+      setSummary("No usable rows found in that file — check it matches this log type.");
+      return;
     }
+    setHeader((h) => ({ ...h, ...parsed.header }));
+    setRows(parsed.rows.map((r) => ({ rowKey: newRowKey(), tool_id: r.tool_id, qty: r.qty, vals: r.vals })));
+    setUploadWarnings(parsed.warnings);
+    setResults(null);
+    setSummary(`Loaded ${parsed.rows.length} rows from "${file.name}" — review before posting.`);
   }
 
   function mapped(name: string, row: RowDraft): string {
@@ -94,13 +110,13 @@ export default function InboxForms() {
     const skippedNoName: string[] = [];
 
     const eligibleRows = rows.filter((r) => {
-      const isNewInward = isInward && r.vals["newtool"] === "Y";
-      // new tools don't need a typed Tool ID (it's auto-generated) — they need a name instead
-      if (isNewInward) {
-        if (!r.vals["name"]?.trim()) { skippedNoName.push(r.tool_id.trim() || "(new tool)"); return false; }
-        return true;
+      if (!r.tool_id.trim()) return false;
+      const isNewTool = isInward && r.vals["newtool"] === "Y";
+      if (isNewTool && !r.vals["name"]?.trim()) {
+        skippedNoName.push(r.tool_id.trim());
+        return false;
       }
-      return !!r.tool_id.trim();
+      return true;
     });
 
     const txns = eligibleRows.map((r) => {
@@ -112,7 +128,7 @@ export default function InboxForms() {
       const isNewTool = isInward && r.vals["newtool"] === "Y";
 
       return {
-        id: isNewTool ? (r.generatedId ?? "") : r.tool_id.trim(), // uses the previewed ID if generated, else server auto-generates
+        id: r.tool_id.trim(),
         type,
         qty: Number(r.qty || "0"),
         person: mapped("person", r),
@@ -163,15 +179,16 @@ export default function InboxForms() {
       const data = await res.json();
       const resultList: PostResult[] = data.results ?? [];
       setResults(resultList);
-
-      // stamp the system-generated ID back onto its row for display
-      setRows((rs) => rs.map((r) => {
-        const match = resultList.find((res) => res.rowKey === r.rowKey);
-        return match?.ok ? { ...r, generatedId: match.id } : r;
-      }));
-
       const skippedNote = skippedNoName.length ? ` · ${skippedNoName.length} skipped (missing Tool Name)` : "";
       setSummary(`Posted ${data.posted ?? 0} · blocked ${data.blocked ?? 0}${skippedNote}`);
+
+      const failedKeys = new Set(resultList.filter((r) => !r.ok).map((r) => r.rowKey));
+      setRows((rs) => {
+        const remaining = rs.filter((r) => failedKeys.has(r.rowKey));
+        return remaining.length > 0 ? remaining : [initRow(active)];
+      });
+
+      if (active.key === "return") setReturnsRefresh((n) => n + 1);
     } catch {
       setSummary("Network error — is the dev server running?");
     } finally { setBusy(false); }
@@ -199,17 +216,22 @@ export default function InboxForms() {
           <p className="muted" style={{ marginTop: 0, fontSize: 13 }}>{active.blurb}</p>
           {isInward && (
             <p className="muted" style={{ marginTop: -6, fontSize: 12 }}>
-              For a <b>new</b> tool, leave Tool ID blank — set New Tool = Y and fill Type Code + Diameter + Length
-              (or Name/Code for non-dimensioned types like taps). The system generates the ID per the nomenclature standard.
+              <b>New Tool = Y</b>: type the Tool ID your team has already decided, plus Tool Name — posted exactly as typed, nothing auto-generated.{" "}
+              <b>New Tool = N</b>: pick the existing tool from the search box and add a note in Remarks.
             </p>
           )}
+
+          {uploadWarnings.length > 0 && (
+            <div className="panel panel-pad" style={{ marginBottom: 12, borderColor: "var(--warn)", fontSize: 12 }}>
+              {uploadWarnings.map((w, i) => <div key={i}>⚠ {w}</div>)}
+            </div>
+          )}
+
+          {active.key === "return" && <PendingReturns onAdd={addReturnRow} refreshKey={returnsRefresh} />}
 
           {headerFields.length > 0 && (
             <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit,minmax(180px,1fr))", gap: 12, marginBottom: 16 }}>
               {headerFields.map((f) => {
-                // "Machine / Subcontractor" is one shared field either way — but
-                // what it actually asks for depends on Operation vs Subcon, so
-                // relabel it live rather than leave a static, ambiguous label.
                 let label = f.label;
                 let placeholder = f.placeholder;
                 if (f.key === "machine" && (active.key === "issue" || active.key === "return")) {
@@ -234,7 +256,7 @@ export default function InboxForms() {
                 <tr>
                   <th style={{ minWidth: 200 }}>Tool ID</th>
                   {!isInward && <th style={{ minWidth: 160 }}>Tool Name</th>}
-                  <th className="right" style={{ width: 70 }}>Qty</th>
+                  <th className="right" style={{ width: 90, minWidth: 90 }}>Qty</th>
                   {rowFields.map((f) => <th key={f.key} style={{ minWidth: 120 }}>{f.label}</th>)}
                   <th style={{ minWidth: 130 }}>Result</th>
                   <th style={{ width: 36 }}></th>
@@ -243,46 +265,58 @@ export default function InboxForms() {
               <tbody>
                 {rows.map((r, i) => {
                   const res = resultFor(r.rowKey);
-                  const isNewInward = isInward && r.vals["newtool"] === "Y";
+                  const isNewTool = isInward && r.vals["newtool"] === "Y";
+                  const remarksEmpty = !isNewTool && isInward && !r.vals["remarks"]?.trim();
                   return (
                     <tr key={r.rowKey}>
                       <td>
-                        {isNewInward ? (
-                          <div style={{ display: "flex", gap: 6 }}>
-                            <input className="input" disabled
-                              value={r.generatedId ?? "Not generated yet"}
-                              style={{ color: r.generatedId ? "var(--ink)" : "var(--ink-soft)", fontStyle: r.generatedId ? "normal" : "italic" }} />
-                            <button type="button" className="btn-ghost"
-                              style={{ border: "1px solid var(--line)", cursor: "pointer", fontSize: 11, whiteSpace: "nowrap", padding: "0 8px" }}
-                              onClick={() => generateId(i)}>
-                              Generate
-                            </button>
-                          </div>
-                        ) : (
-                          <ToolIdAutocomplete
-                            value={r.tool_id}
-                            onChange={(v) => setRTool(i, v)}
-                            placeholder="e.g. SC 0680 035 01"
-                            allowNew={false}
-                            onResolved={(m) => setRows((rs) => rs.map((row, j) =>
-                              j === i ? { ...row, resolvedName: m?.name ?? undefined } : row))}
-                          />
-                        )}
+                        <ToolIdAutocomplete
+                          value={r.tool_id}
+                          onChange={(v) => setRTool(i, v)}
+                          placeholder={isNewTool ? "type the ID your team decided" : "e.g. SC 0680 035 01"}
+                          allowNew={isNewTool}
+                          onResolved={(m) => setRows((rs) => rs.map((row, j) =>
+                            j === i ? { ...row, resolvedName: m?.name ?? undefined } : row))}
+                        />
                       </td>
                       {!isInward && (
-                        <td className="muted" style={{ fontSize: 13 }}>
-                          {r.resolvedName ?? "—"}
-                        </td>
+                        <td className="muted" style={{ fontSize: 13 }}>{r.resolvedName ?? "—"}</td>
                       )}
-                      <td><input className="input num" type="number" min={1}
-                        value={r.qty} onChange={(e) => setRQty(i, e.target.value)} /></td>
+                      <td style={{ minWidth: 90 }}>
+                        <input
+                          className="input num"
+                          type="text"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          style={{ width: "100%", minWidth: 70, textAlign: "right" }}
+                          value={r.qty}
+                          onChange={(e) => setRQty(i, e.target.value.replace(/[^0-9]/g, ""))}
+                        />
+                      </td>
                       {rowFields.map((f) => {
-                        const dimensionOnly = ["dia", "length", "namecode", "typecode"].includes(f.key);
-                        if (isInward && dimensionOnly && r.vals["newtool"] !== "Y") {
+                        const dimensionOnly = ["dia", "length", "namecode", "typecode", "name", "class"].includes(f.key);
+                        if (isInward && f.key === "newtool") {
                           return (
                             <td key={f.key}>
-                              <input className="input" disabled value="Set New Tool = Y"
-                                style={{ color: "var(--ink-soft)", fontStyle: "italic", fontSize: 12 }} />
+                              <Field f={f} value={r.vals[f.key] ?? ""} onChange={(v) => setRVal(i, f.key, v)} />
+                            </td>
+                          );
+                        }
+                        if (isInward && dimensionOnly && !isNewTool) {
+                          return (
+                            <td key={f.key}>
+                              <input className="input" disabled value="—"
+                                style={{ color: "var(--ink-soft)", fontSize: 12 }} />
+                            </td>
+                          );
+                        }
+                        if (isInward && f.key === "remarks") {
+                          return (
+                            <td key={f.key}>
+                              <Field f={f} value={r.vals[f.key] ?? ""} onChange={(v) => setRVal(i, f.key, v)} />
+                              {remarksEmpty && (
+                                <div className="muted" style={{ fontSize: 10, color: "var(--warn)" }}>Add a note for this restock</div>
+                              )}
                             </td>
                           );
                         }
@@ -309,6 +343,10 @@ export default function InboxForms() {
           </div>
 
           <div className="toolbar" style={{ marginBottom: 0 }}>
+            <label className="btn-ghost" style={{ border: "1px solid var(--line)", cursor: "pointer", display: "inline-flex", alignItems: "center" }}>
+              ⬆ Upload log (.xlsx)
+              <input type="file" accept=".xlsx,.xls" onChange={handleFileUpload} style={{ display: "none" }} />
+            </label>
             <button className="btn-ghost" style={{ border: "1px solid var(--line)", cursor: "pointer" }} onClick={addRow}>+ Add row</button>
             <div className="spacer" />
             {summary && <span className="muted" style={{ fontSize: 13 }}>{summary}</span>}

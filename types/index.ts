@@ -22,3 +22,21 @@ export interface Txn {
   // even when the server assigns a brand-new, system-generated Tool ID.
   rowKey?: string;
 }
+
+export interface Delta {
+  avail: number;
+  inuse: number;
+  wregr: number;
+  atregr: number;
+  wscrap: number;
+  scrap: number;
+}
+
+export interface EngineResult {
+  ok: boolean;
+  checks: string[];
+  errors: string[];
+  warnings: string[];
+  delta?: Delta;
+  remark?: string;
+}

@@ -15,15 +15,17 @@ const STATUS_CHIP: Record<string, string> = {
   "At Regrind": "chip-atregr", "Waiting Scrap": "chip-wscrap", "None/Scrapped": "chip-scrap",
 };
 
-/**
- * Tool ID input with live suggestions against tool_inventory (~1,343 real
- * tools). The dropdown renders via a portal into document.body, positioned
- * by the input's real screen coordinates — required because the input sits
- * inside a horizontally-scrolling table container, and any ancestor with
- * overflow:auto clips a normal absolutely-positioned child regardless of
- * z-index. A separate dropdownRef lets click-outside detection recognize
- * clicks inside the portal (which lives outside boxRef in the real DOM).
- */
+function lev(a: string, b: string): number {
+  const dp: number[][] = Array.from({ length: a.length + 1 }, () => new Array(b.length + 1).fill(0));
+  for (let i = 0; i <= a.length; i++) dp[i][0] = i;
+  for (let j = 0; j <= b.length; j++) dp[0][j] = j;
+  for (let i = 1; i <= a.length; i++)
+    for (let j = 1; j <= b.length; j++)
+      dp[i][j] = a[i - 1] === b[j - 1] ? dp[i - 1][j - 1]
+        : 1 + Math.min(dp[i - 1][j], dp[i][j - 1], dp[i - 1][j - 1]);
+  return dp[a.length][b.length];
+}
+
 export default function ToolIdAutocomplete({
   value, onChange, placeholder, allowNew = false, onResolved,
 }: {
@@ -31,12 +33,10 @@ export default function ToolIdAutocomplete({
   onChange: (v: string) => void;
   placeholder?: string;
   allowNew?: boolean;
-  /** Fires with the matched tool's name/type when the typed value exactly
-   *  matches a real Tool ID — mirrors the real Excel logs' auto-VLOOKUP
-   *  Tool Name column. Fires with null when there's no exact match. */
   onResolved?: (match: ToolMatch | null) => void;
 }) {
   const [matches, setMatches] = useState<ToolMatch[]>([]);
+  const [fuzzyMatches, setFuzzyMatches] = useState<ToolMatch[]>([]);
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [searched, setSearched] = useState(false);
@@ -51,7 +51,7 @@ export default function ToolIdAutocomplete({
     if (debounceRef.current) clearTimeout(debounceRef.current);
 
     debounceRef.current = setTimeout(async () => {
-      if (q.length < 2) { setMatches([]); setSearched(false); setLoading(false); return; }
+      if (q.length < 2) { setMatches([]); setFuzzyMatches([]); setSearched(false); setLoading(false); return; }
       setLoading(true);
       const supabase = createClient();
       const { data } = await supabase
@@ -68,12 +68,31 @@ export default function ToolIdAutocomplete({
         return a.tool_id.localeCompare(b.tool_id);
       }).slice(0, 8);
       setMatches(ranked);
+
+      if (ranked.length === 0 && !allowNew) {
+        const firstTwo = upperQ.slice(0, 2);
+        const { data: broad } = await supabase
+          .from("tool_inventory")
+          .select("tool_id,name,type,status")
+          .ilike("tool_id", `${firstTwo}%`)
+          .limit(300);
+        const scored = ((broad as ToolMatch[]) ?? [])
+          .map((m) => ({ m, d: lev(upperQ, m.tool_id.toUpperCase()) }))
+          .sort((a, b) => a.d - b.d)
+          .filter((x) => x.d <= Math.max(4, Math.ceil(upperQ.length * 0.35)))
+          .slice(0, 6)
+          .map((x) => x.m);
+        setFuzzyMatches(scored);
+      } else {
+        setFuzzyMatches([]);
+      }
+
       setLoading(false);
       setSearched(true);
     }, 250);
 
     return () => { if (debounceRef.current) clearTimeout(debounceRef.current); };
-  }, [value]);
+  }, [value, allowNew]);
 
   useEffect(() => {
     function onClickOutside(e: MouseEvent) {
@@ -111,8 +130,10 @@ export default function ToolIdAutocomplete({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [matches, value]);
 
-  const showNoMatch = !allowNew && searched && !loading && value.trim().length >= 2 && matches.length === 0;
-  const showDropdown = open && value.trim().length >= 2 && !exactMatch && matches.length > 0;
+  const showNoMatch = !allowNew && searched && !loading && value.trim().length >= 2 && matches.length === 0 && fuzzyMatches.length === 0;
+  const showDropdown = open && value.trim().length >= 2 && !exactMatch && (matches.length > 0 || fuzzyMatches.length > 0);
+  const list = matches.length > 0 ? matches : fuzzyMatches;
+  const isFuzzy = matches.length === 0 && fuzzyMatches.length > 0;
 
   return (
     <div ref={boxRef} style={{ position: "relative" }}>
@@ -127,15 +148,20 @@ export default function ToolIdAutocomplete({
       />
       {showNoMatch && (
         <div className="muted" style={{ fontSize: 11, color: "var(--danger, #c0392b)", marginTop: 2 }}>
-          No ID found — check spelling, or Inward it first if it&apos;s new.
+          No ID found, even allowing for a spelling mistake — check the tool room, or Inward it first if it&apos;s new.
         </div>
       )}
       {showDropdown && rect && typeof document !== "undefined" && createPortal(
         <div ref={dropdownRef} className="panel" style={{
           position: "fixed", top: rect.top, left: rect.left, width: rect.width, zIndex: 9999,
-          maxHeight: 260, overflow: "auto", boxShadow: "0 6px 20px rgba(0,0,0,0.18)", background: "var(--panel)",
+          maxHeight: 280, overflow: "auto", boxShadow: "0 6px 20px rgba(0,0,0,0.18)", background: "var(--panel)",
         }}>
-          {matches.map((m) => (
+          {isFuzzy && (
+            <div className="muted" style={{ fontSize: 11, padding: "6px 10px", borderBottom: "1px solid var(--line)", background: "var(--panel-2)" }}>
+              No exact match — closest real Tool IDs (check spelling):
+            </div>
+          )}
+          {list.map((m) => (
             <div key={m.tool_id}
               onClick={() => { onChange(m.tool_id); setOpen(false); }}
               style={{

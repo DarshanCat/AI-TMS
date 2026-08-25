@@ -26,7 +26,7 @@ export const LOGS: LogSpec[] = [
     blurb: "New / purchased tools arriving into the VSPL store.",
     fields: [
       { key: "date", label: "Date", type: "date", scope: "header" },
-      { key: "newtool", label: "New Tool?", type: "select", scope: "row", options: ["N", "Y"] },
+      { key: "newtool", label: "New Tool? (Y/N)", type: "select", scope: "row", options: ["N", "Y"] },
       { key: "typecode", label: "Type Code", type: "text", scope: "row", placeholder: "SC, EM, CD, TP…" },
       { key: "dia", label: "Diameter (mm)", type: "number", scope: "row" },
       { key: "length", label: "Length (mm)", type: "number", scope: "row" },
