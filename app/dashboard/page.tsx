@@ -4,13 +4,13 @@ export default async function DashboardPage() {
   const supabase = await createClient();
   const { data: inv } = await supabase
     .from("tool_inventory")
-    .select("avail,inuse,wregr,atregr,scrap")
+    .select("avail,inuse,wregr,atregr,wscrap,scrap")
     .limit(5000);
 
   const rows = inv ?? [];
   const has = rows.length > 0;
-  const sum = (k: "avail" | "inuse" | "wregr" | "atregr" | "scrap") =>
-    rows.reduce((a, r) => a + (r[k] as number), 0);
+  const sum = (k: "avail" | "inuse" | "wregr" | "atregr" | "wscrap" | "scrap") =>
+    rows.reduce((a, r) => a + (Number(r[k]) || 0), 0);
 
   // live data when present; representative sample while data is being structured
   const kpis = has
@@ -19,6 +19,7 @@ export default async function DashboardPage() {
         { k: "Available", v: sum("avail") },
         { k: "In use", v: sum("inuse") },
         { k: "Waiting regrind", v: sum("wregr") },
+        { k: "Waiting scrap", v: sum("wscrap") },
         { k: "At vendor", v: sum("atregr") },
         { k: "Scrapped", v: sum("scrap") },
       ]
@@ -27,6 +28,7 @@ export default async function DashboardPage() {
         { k: "Available", v: 1240 },
         { k: "In use", v: 290 },
         { k: "Waiting regrind", v: 38 },
+        { k: "Waiting scrap", v: 12 },
         { k: "At vendor", v: 8 },
         { k: "Scrapped", v: 45 },
       ];

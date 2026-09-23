@@ -40,6 +40,7 @@ export default function PrepareActions({
   const dueSoonCount = [...data.inUse, ...data.atVendor].filter((r) => urgencyOf(daysSince(r.since)) === "due-soon").length;
 
   async function act(section: SectionKey, row: PrepRow, txnType: string, tofrom: string, machine: string) {
+    if (busyId) return;
     setBusyId(row.tool_id); setToast(null);
     const txn = { id: row.tool_id, type: txnType, qty: 1, person, machine, tofrom, dc: "", condition: "", life: null, remark: "Posted via Prepare" };
     try {

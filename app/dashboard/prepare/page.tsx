@@ -63,11 +63,6 @@ export default async function PreparePage() {
   const atVendor = atVendorRows.map((r) => toPrep(r, dispatchMap));
   const waitingRegrind = waitingRows.map((r) => ({ tool_id: r.tool_id, name: r.name, where: r.loc ?? "VSPL store", since: null, by: null, issuedBy: null }));
 
-  const daysOut = (ts: string | null) => ts ? Math.max(0, Math.round((Date.now() - new Date(ts).getTime()) / 86400000)) : null;
-  const overdueCount = [...inUse, ...atVendor].filter((r) => (daysOut(r.since) ?? 0) >= 14).length;
-  const dueSoonCount = [...inUse, ...atVendor].filter((r) => { const d = daysOut(r.since); return d != null && d >= 7 && d < 14; }).length;
-
-  const totalOut = inUse.length + atVendor.length;
   const noData = rows.length === 0;
 
   return (

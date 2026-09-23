@@ -106,6 +106,7 @@ export default function InboxForms() {
   }
 
   async function post() {
+    if (busy) return;
     setBusy(true); setResults(null); setSummary("");
     const skippedNoName: string[] = [];
 

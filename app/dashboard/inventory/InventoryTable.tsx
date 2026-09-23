@@ -42,7 +42,7 @@ export default function InventoryTable({ rows, live }: { rows: Row[]; live: bool
       return asc ? c : -c;
     });
     return out;
-  }, [rows, q, status, sortKey, asc]);
+  }, [rows, q, status, showScrapped, sortKey, asc]);
 
   const sortBy = (k: keyof Row) => {
     if (k === sortKey) setAsc(!asc);

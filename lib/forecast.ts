@@ -36,6 +36,7 @@ const COUNT_ISSUE = false;
 
 function isConsumption(e: LedgerEvent): boolean {
   if (e.txn_type === "SCRAP") return true;
+  if (e.txn_type === "CHIPOFF" && (e.condition === "Broken" || e.condition?.toLowerCase() === "broken")) return true;
   if (COUNT_ISSUE && e.txn_type === "ISSUE") return true;
   return false;
 }

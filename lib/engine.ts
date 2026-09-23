@@ -64,16 +64,16 @@ export function runEngine(txn: Txn, tool: InventoryRow | null): EngineResult {
   const warnings: string[] = [];
   const qty = Number(txn.qty);
 
-  // 1. Qty guard — Qty=0 is rejected, NOT coerced to 1
-  if (!Number.isInteger(qty) || qty < 1) {
-    errors.push("Qty must be a whole number >= 1. Qty=0 is rejected, not coerced.");
+  // 1. Qty guard — Qty <= 0, NaN, non-finite, or non-integer is rejected, NOT coerced
+  if (!Number.isFinite(qty) || !Number.isInteger(qty) || qty < 1) {
+    errors.push("Qty must be a positive whole number >= 1. Invalid, zero, or negative quantities are rejected.");
     return { ok: false, checks, errors, warnings };
   }
   checks.push(`validate qty=${qty} ok`);
 
   // 2. Existence
   if (txn.type !== "INWARD" && !tool) {
-    errors.push("Tool ID not found in master. Inward it first, or fix the ID.");
+    errors.push(`Tool ID "${txn.id || "(blank)"}" not found in master. Inward it first, or fix the ID.`);
     return { ok: false, checks, errors, warnings };
   }
   if (txn.type === "INWARD" && !tool && !txn.newTool) {
@@ -96,24 +96,28 @@ export function runEngine(txn: Txn, tool: InventoryRow | null): EngineResult {
       d.inuse -= qty; d.avail += qty; break;
     case "CHIPOFF": {
       const onhand = t.inuse + t.avail;
-      if (onhand < qty) { errors.push(`Only ${onhand} on hand — cannot flag ${qty}.`); break; }
+      if (onhand < qty) { errors.push(`Only ${onhand} on hand (${t.inuse} in use, ${t.avail} available) — cannot flag ${qty}.`); break; }
       const fromUse = Math.min(t.inuse, qty), fromAvail = qty - fromUse;
       d.inuse -= fromUse; d.avail -= fromAvail;
       if (txn.condition === "Broken") d.wscrap += qty; else d.wregr += qty;
       break;
     }
     case "DISPATCH":
-      if (t.wregr < qty) { errors.push(`Only ${t.wregr} waiting regrind.`); break; }
+      if (t.wregr < qty) { errors.push(`Only ${t.wregr} waiting regrind — cannot dispatch ${qty}.`); break; }
       d.wregr -= qty; d.atregr += qty; break;
     case "RECEIPT":
-      if (t.atregr < qty) { errors.push(`Only ${t.atregr} at vendor.`); break; }
+      if (t.atregr < qty) { errors.push(`Only ${t.atregr} at vendor — cannot receive ${qty}.`); break; }
       d.atregr -= qty; d.avail += qty; break;
     case "SCRAP": {
-      const scrapable = t.wscrap + t.avail + t.inuse;
-      if (scrapable < qty) { errors.push("Nothing available to scrap."); break; }
+      const scrapable = t.wscrap + t.wregr + t.avail + t.inuse;
+      if (scrapable < qty) {
+        errors.push(`Only ${scrapable} available across queues (${t.wscrap} waiting scrap, ${t.wregr} waiting regrind, ${t.avail} available, ${t.inuse} in use) — cannot scrap ${qty}.`);
+        break;
+      }
       const fromWs = Math.min(t.wscrap, qty); let rem = qty - fromWs;
+      const fromWr = Math.min(t.wregr, rem); rem -= fromWr;
       const fa = Math.min(t.avail, rem); rem -= fa; const fi = rem;
-      d.wscrap -= fromWs; d.avail -= fa; d.inuse -= fi; d.scrap += qty; break;
+      d.wscrap -= fromWs; d.wregr -= fromWr; d.avail -= fa; d.inuse -= fi; d.scrap += qty; break;
     }
     default: errors.push("Unknown transaction type.");
   }
