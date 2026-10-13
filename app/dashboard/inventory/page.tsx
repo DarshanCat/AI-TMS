@@ -19,15 +19,14 @@ export default async function InventoryPage() {
     .limit(2000);
 
   const rows = (data as Row[] | null) ?? [];
-  const live = rows.length > 0;
 
   return (
     <div>
       <h1 className="page-title">Inventory</h1>
       <p className="page-sub">
-        {live ? `${rows.length.toLocaleString()} tools · projected from the ledger.` : "Sample rows — live inventory appears once your tables are populated."}
+        {rows.length > 0 ? `${rows.length.toLocaleString()} tools · live inventory across the crib.` : "No tools found in inventory. Inward tools from the Inbox to populate."}
       </p>
-      <InventoryTable rows={live ? rows : SAMPLE} live={live} />
+      <InventoryTable rows={rows} live={true} />
     </div>
   );
 }

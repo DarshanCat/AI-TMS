@@ -92,10 +92,9 @@ export default async function VendorsPage() {
     .order("id", { ascending: true })
     .limit(20000);
 
-  const scorecardsLive = (ledgerEvents ?? []).length > 0;
-  const scorecards = scorecardsLive
+  const scorecards = (ledgerEvents ?? []).length > 0
     ? computeScorecards(ledgerEvents as RawLedgerEvent[])
-    : SAMPLE_SCORECARDS;
+    : [];
 
   // At-vendor = current tool_inventory rows sitting in atregr, joined to the
   // most recent DISPATCH ledger entry for when/DC.
@@ -138,7 +137,7 @@ export default async function VendorsPage() {
     });
   }
 
-  const view = live ? rows : SAMPLE;
+  const view = rows;
   const vendorCount = new Set(view.map((r) => r.vendor)).size;
 
   return (
@@ -156,13 +155,13 @@ export default async function VendorsPage() {
             turnaround, cost, and success rate — computed from completed regrind cycles
           </span>
         </div>
-        <VendorScorecards rows={scorecards} live={scorecardsLive} />
+        <VendorScorecards rows={scorecards} live={scorecards.length > 0} />
       </div>
 
       <p className="page-sub" style={{ marginTop: 0 }}>
         {live
           ? `${rows.length.toLocaleString()} tools currently at ${vendorCount} vendor${vendorCount === 1 ? "" : "s"} · regrind in progress.`
-          : "Sample rows — the live view appears once tools are dispatched to a vendor."}
+          : "No tools currently at vendors."}
       </p>
       <VendorsTable rows={view} live={live} />
     </div>

@@ -44,7 +44,7 @@ export const LOGS: LogSpec[] = [
     ],
   },
   {
-    key: "issue", txn: "ISSUE", title: "2 · Issue to operations",
+    key: "issue", txn: "ISSUE", title: "2 · Issue to operation",
     blurb: "Store → shop floor. Reduces Available, raises In Use.",
     fields: [
       { key: "date", label: "Date", type: "date", scope: "header" },
@@ -61,7 +61,7 @@ export const LOGS: LogSpec[] = [
     ],
   },
   {
-    key: "return", txn: "RECEIVE", title: "3 · Return from operations",
+    key: "return", txn: "RECEIVE", title: "3 · Return from operation",
     blurb: "Shop floor → store. Enter cumulative tool life on return.",
     fields: [
       { key: "date", label: "Date", type: "date", scope: "header" },
@@ -76,7 +76,7 @@ export const LOGS: LogSpec[] = [
     ],
   },
   {
-    key: "chipoff", txn: "CHIPOFF", title: "4 · Chip-off / Broken",
+    key: "chipoff", txn: "CHIPOFF", title: "4 · Broken / Chipoff",
     blurb: "Flag damaged tools. Chip-off → waiting regrind; Broken → waiting scrap.",
     fields: [
       { key: "date", label: "Date", type: "date", scope: "header" },
@@ -90,7 +90,7 @@ export const LOGS: LogSpec[] = [
     ],
   },
   {
-    key: "dispatch", txn: "DISPATCH", title: "5 · Regrind / Scrap dispatch",
+    key: "dispatch", txn: "DISPATCH", title: "5 · Regrinding and Scrap Dispatch",
     blurb: "Send waiting-regrind tools out to a vendor (or to scrap).",
     fields: [
       { key: "date", label: "Date", type: "date", scope: "header" },
@@ -102,7 +102,7 @@ export const LOGS: LogSpec[] = [
     ],
   },
   {
-    key: "receipt", txn: "RECEIPT", title: "6 · Regrind receipt",
+    key: "receipt", txn: "RECEIPT", title: "6 · Regrinding receipt",
     blurb: "Reground tools coming back from the vendor into the store.",
     fields: [
       { key: "date", label: "Date", type: "date", scope: "header" },

@@ -1,7 +1,7 @@
 import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 
-export async function middleware(request: NextRequest) {
+export async function proxy(request: NextRequest) {
   let response = NextResponse.next({ request });
 
   try {
@@ -44,7 +44,7 @@ export async function middleware(request: NextRequest) {
       return NextResponse.redirect(dashboardUrl);
     }
   } catch (err) {
-    console.error("Middleware auth check error:", err);
+    console.error("Proxy auth check error:", err);
     if (request.nextUrl.pathname.startsWith("/dashboard")) {
       return NextResponse.redirect(new URL("/login", request.url));
     }

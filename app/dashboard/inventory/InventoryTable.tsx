@@ -93,7 +93,13 @@ export default function InventoryTable({ rows, live }: { rows: Row[]; live: bool
                 <td className="muted">{r.type}</td>
                 <td><span className={"chip " + (CHIP[r.status] ?? "chip-scrap")}>{r.status}</span></td>
                 <td className="muted">{r.loc}</td>
-                <td className="num">{r.avail}</td>
+                <td className="num">
+                  {r.avail === 0 ? (
+                    <span className="chip chip-wscrap" style={{ fontSize: 10, padding: "1px 6px" }}>0 · No spare</span>
+                  ) : (
+                    r.avail
+                  )}
+                </td>
                 <td className="num">{r.inuse}</td>
                 <td className="num">{r.wregr}</td>
                 <td className="num">{r.owned}</td>

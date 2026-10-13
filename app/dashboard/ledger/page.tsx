@@ -28,9 +28,9 @@ export default async function LedgerPage() {
       <p className="page-sub">
         {live
           ? `${rows.length.toLocaleString()} transactions · append-only, newest first.`
-          : "Sample transactions — the live ledger appears once entries are posted."}
+          : "No transactions posted yet. Use the Inbox to post tool movements."}
       </p>
-      <LedgerTable rows={live ? rows : SAMPLE} live={live} />
+      <LedgerTable rows={rows} live={true} />
     </div>
   );
 }

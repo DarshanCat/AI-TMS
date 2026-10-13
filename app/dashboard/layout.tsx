@@ -6,7 +6,7 @@ const NAV: [string, string][] = [
   ["Dashboard", "/dashboard"],
   ["Inbox", "/dashboard/inbox"],
   ["Tool Desk", "/dashboard/tool-desk"],
-  ["Prepare", "/dashboard/prepare"],
+  ["In Use", "/dashboard/prepare"],
   ["Inventory", "/dashboard/inventory"],
   ["Ledger", "/dashboard/ledger"],
   ["Scrap Register", "/dashboard/scrap"],
@@ -14,6 +14,7 @@ const NAV: [string, string][] = [
   ["Forecasting", "/dashboard/forecasting"],
   ["Reports", "/dashboard/reports"],
   ["Daily", "/dashboard/daily"],
+  ["Nomenclature", "/dashboard/nomenclature"],
   ["Audit Records", "/dashboard/audit"],
 ];
 

@@ -199,16 +199,48 @@ export default function InboxForms() {
 
   return (
     <>
-      <div className="toolbar">
-        {LOGS.map((l) => (
-          <button key={l.key}
-            className={l.key === active.key ? "btn" : "btn-ghost"}
-            style={{ padding: "7px 12px", fontSize: 12, borderRadius: 6, cursor: "pointer",
-                     border: l.key === active.key ? "1px solid var(--steel)" : "1px solid var(--line)" }}
-            onClick={() => pick(l)}>
-            {l.title.split(" · ")[0]}
-          </button>
-        ))}
+      <div className="toolbar" style={{ display: "flex", flexWrap: "wrap", gap: 8, marginBottom: 16 }}>
+        {LOGS.map((l) => {
+          const isSel = l.key === active.key;
+          const [num, ...rest] = l.title.split(" · ");
+          const name = rest.join(" · ");
+          return (
+            <button key={l.key}
+              className={isSel ? "btn" : "btn-ghost"}
+              style={{
+                padding: "8px 14px",
+                fontSize: 13,
+                borderRadius: 8,
+                cursor: "pointer",
+                display: "inline-flex",
+                alignItems: "center",
+                gap: 8,
+                fontWeight: isSel ? 700 : 500,
+                border: isSel ? "1px solid var(--steel)" : "1px solid var(--line)",
+                background: isSel ? "var(--steel)" : "var(--panel)",
+                color: isSel ? "#fff" : "var(--ink)",
+                transition: "all 0.15s ease",
+              }}
+              title={l.title}
+              onClick={() => pick(l)}>
+              <span style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: 20,
+                height: 20,
+                borderRadius: "50%",
+                background: isSel ? "rgba(255,255,255,0.25)" : "var(--panel-2)",
+                color: isSel ? "#fff" : "var(--steel)",
+                fontSize: 11,
+                fontWeight: 700,
+              }}>
+                {num}
+              </span>
+              <span>{name}</span>
+            </button>
+          );
+        })}
       </div>
 
       <div className="panel" style={{ marginBottom: 16 }}>
@@ -356,8 +388,28 @@ export default function InboxForms() {
         </div>
       </div>
 
+      {results && results.some((r) => r.warnings.length > 0) && (
+        <div className="panel" style={{ marginTop: 16, borderColor: "var(--warn)", background: "#fffdf5" }}>
+          <div className="panel-head" style={{ color: "#8a5a12", fontWeight: 700 }}>
+            ⚠️ AI-TMS Stock Intelligence &amp; Spare Alerts
+          </div>
+          <div className="panel-pad">
+            {results.filter((r) => r.warnings.length > 0).map((r, i) => (
+              <div key={i} style={{ fontSize: 13, marginBottom: 8, display: "flex", alignItems: "flex-start", gap: 8 }}>
+                <span className="id" style={{ fontWeight: 700 }}>{r.id}:</span>
+                <div style={{ color: "#68430a" }}>
+                  {r.warnings.map((w, wi) => (
+                    <div key={wi} style={{ marginBottom: 2 }}>{w}</div>
+                  ))}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
       {results && results.some((r) => !r.ok) && (
-        <div className="panel">
+        <div className="panel" style={{ marginTop: 16 }}>
           <div className="panel-head">Blocked rows</div>
           <div className="panel-pad">
             {results.filter((r) => !r.ok).map((r, i) => (

@@ -124,7 +124,26 @@ export function runEngine(txn: Txn, tool: InventoryRow | null): EngineResult {
   if (errors.length) return { ok: false, checks, errors, warnings };
   checks.push("source sufficiency ok");
 
-  // 4. Life regression -> warn + flag (don't block)
+  // 4. Intelligence Check: No spare warning on breakage or scrap
+  // If a tool breaks (CHIPOFF with condition='Broken') or is SCRAPped, and remaining usable stock is 0:
+  const isBrokenEvent = txn.type === "CHIPOFF" && txn.condition === "Broken";
+  const isScrapEvent = txn.type === "SCRAP";
+  if (isBrokenEvent || isScrapEvent) {
+    const remainingAvail = t.avail + d.avail;
+    const remainingInUse = t.inuse + d.inuse;
+    const remainingRecoverable = t.wregr + d.wregr + t.atregr + d.atregr;
+    if (remainingAvail <= 0) {
+      if (remainingInUse <= 0 && remainingRecoverable <= 0) {
+        warnings.push(`CRITICAL: Tool "${txn.id}" is broken/scrapped and has NO SPARE in store (0 available, 0 in use). Reorder immediately!`);
+      } else if (remainingInUse <= 0 && remainingRecoverable > 0) {
+        warnings.push(`ALERT: Tool "${txn.id}" is broken/scrapped with NO SPARE in store (0 available, 0 in use). Only ${remainingRecoverable} pending regrind.`);
+      } else {
+        warnings.push(`CAUTION: Tool "${txn.id}" is broken/scrapped and has NO SPARE in store (0 available; ${remainingInUse} in use on machines).`);
+      }
+    }
+  }
+
+  // 5. Life regression -> warn + flag (don't block)
   let remark = txn.remark ?? "";
   if (txn.life != null && (txn.life as unknown) !== "" && tool?.life != null &&
       Number(txn.life) < Number(tool.life)) {

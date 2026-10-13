@@ -31,10 +31,7 @@ export default async function ForecastingPage() {
   const events = (evData as LedgerEvent[] | null) ?? [];
   const live = stock.length > 0;
 
-  const forecasts = forecastAll(
-    live ? stock : SAMPLE_STOCK,
-    live ? events : SAMPLE_EVENTS,
-  );
+  const forecasts = forecastAll(stock, events);
   const needing = forecasts.filter((f) => f.reorderQty > 0);
 
   return (
@@ -43,7 +40,7 @@ export default async function ForecastingPage() {
       <p className="page-sub">
         {live
           ? "Consumption rates and stock-out projections computed from ledger depletion events."
-          : "Sample projection — real figures build once consumption is posted."}
+          : "No active inventory to forecast. Inward tools from the Inbox to begin tracking."}
         {" "}Lead time {DEFAULT_CONFIG.leadTimeDays}d + {DEFAULT_CONFIG.safetyDays}d safety.
       </p>
 

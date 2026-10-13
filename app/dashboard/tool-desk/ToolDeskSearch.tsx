@@ -77,12 +77,17 @@ export default function ToolDeskSearch({ rows }: { rows: DeskRow[] }) {
             </div>
             <div className="panel-pad">
               <div style={{ fontWeight: 600, marginBottom: 10 }}>{exact.name}</div>
-              <div style={{ display: "flex", gap: 18, flexWrap: "wrap", fontSize: 13, marginBottom: 10 }}>
+              <div style={{ display: "flex", gap: 18, flexWrap: "wrap", fontSize: 13, marginBottom: 10, alignItems: "center" }}>
                 <span>Avail <b>{exact.avail}</b></span>
                 <span>In use <b>{exact.inuse}</b></span>
                 <span>W-Regr <b>{exact.wregr}</b></span>
                 <span>At vendor <b>{exact.atregr}</b></span>
                 <span>Scrap <b>{exact.scrap}</b></span>
+                {exact.avail === 0 && (
+                  <span className="chip chip-wscrap" style={{ fontWeight: 700, padding: "3px 8px" }}>
+                    ⚠️ NO SPARE IN STORE
+                  </span>
+                )}
               </div>
               <div style={{ display: "flex", gap: 18, flexWrap: "wrap", fontSize: 13, marginBottom: 14 }}>
                 <span>Location <b className="id" style={{ fontSize: 12 }}>{exact.loc || "—"}</b></span>

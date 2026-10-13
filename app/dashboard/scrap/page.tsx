@@ -56,12 +56,12 @@ export default async function ScrapRegisterPage() {
     <div>
       <h1 className="page-title">Scrap Register</h1>
       <p className="page-sub">
-        {live
+        {rows.length > 0
           ? `${rows.length.toLocaleString()} scrapped tools · read-only record, kept for audit — nothing here is ever deleted.`
-          : "Sample row — the live register appears once a tool is scrapped."}
+          : "No tools currently scrapped."}
         {" "}Re-inward the same Tool ID to bring it back into live stock.
       </p>
-      <ScrapTable rows={live ? rows : SAMPLE} live={live} />
+      <ScrapTable rows={rows} live={true} />
     </div>
   );
 }

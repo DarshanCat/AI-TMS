@@ -67,7 +67,7 @@ export default async function PreparePage() {
 
   return (
     <div>
-      <h1 className="page-title">Prepare — take back</h1>
+      <h1 className="page-title">In Use</h1>
       <p className="page-sub">
         Today&apos;s worklist. Tools out 7+ days are flagged due-soon, 14+ days overdue —
         check with who took it and who issued it before chasing it down. Each action posts through the engine.

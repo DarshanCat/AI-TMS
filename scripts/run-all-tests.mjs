@@ -170,8 +170,6 @@ console.log("\n=== RUNNING FORECASTING TESTS ===\n");
   assert(fcBroken[0].daysCover !== null, "Test 11.4: Broken chipoff projects days cover");
 }
 
-console.log("\n=== RUNNING TOOL ID GENERATOR TESTS ===\n");
-
 // Test 12: Tool ID Generation
 {
   const base = toolIdBase("SC", 6.8, 35);
@@ -179,6 +177,19 @@ console.log("\n=== RUNNING TOOL ID GENERATOR TESTS ===\n");
 
   const nextId = genToolId(["SC 0680 035 01", "SC 0680 035 02"], "SC", 6.8, 35);
   assert(nextId === "SC 0680 035 03", `Test 12.2: genToolId sequence increment: expected "SC 0680 035 03", got "${nextId}"`);
+}
+
+console.log("\n=== RUNNING ZERO-SPARE INTELLIGENCE TESTS ===\n");
+
+// Test 13: Tool with 1 qty broken -> triggers NO SPARE critical alert
+{
+  const tool = {
+    tool_id: "SC 0880 230 01", name: "DIA 8.8 DRILL", type: "Solid Carbide", status: "In Use",
+    loc: "HMC", avail: 0, inuse: 1, wregr: 0, atregr: 0, wscrap: 0, scrap: 0, owned: 1, life: 50,
+  };
+  const res = runEngine({ id: tool.tool_id, type: "CHIPOFF", qty: 1, condition: "Broken" }, tool);
+  assert(res.ok === true, "Test 13.1: Broken chipoff allowed");
+  assert(res.warnings.some(w => w.includes("NO SPARE")), "Test 13.2: Engine emits NO SPARE critical alert");
 }
 
 console.log(`\n========================================`);

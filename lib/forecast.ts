@@ -109,6 +109,13 @@ export function forecastAll(
       reason = `~${perDay.toFixed(2)} pcs/day; ${Math.round(daysCover)} days cover — healthy.`;
     }
 
+    // Zero-spare intelligence: if available stock is 0 and tool has been depleted/broken
+    if (s.avail <= 0 && evts.length >= 1) {
+      urgency = "now";
+      reorderQty = Math.max(reorderQty, 1);
+      reason = "CRITICAL: 0 available in store — no spare remaining! Reorder immediately.";
+    }
+
     out.push({
       tool_id: s.tool_id, name: s.name, avail: s.avail,
       perDay, daysCover, stockOut, reorderQty, urgency, reason,

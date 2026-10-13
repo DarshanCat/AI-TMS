@@ -12,32 +12,22 @@ export default async function DashboardPage() {
   const sum = (k: "avail" | "inuse" | "wregr" | "atregr" | "wscrap" | "scrap") =>
     rows.reduce((a, r) => a + (Number(r[k]) || 0), 0);
 
-  // live data when present; representative sample while data is being structured
-  const kpis = has
-    ? [
-        { k: "Tools tracked", v: rows.length, accent: true },
-        { k: "Available", v: sum("avail") },
-        { k: "In use", v: sum("inuse") },
-        { k: "Waiting regrind", v: sum("wregr") },
-        { k: "Waiting scrap", v: sum("wscrap") },
-        { k: "At vendor", v: sum("atregr") },
-        { k: "Scrapped", v: sum("scrap") },
-      ]
-    : [
-        { k: "Tools tracked", v: 1343, accent: true },
-        { k: "Available", v: 1240 },
-        { k: "In use", v: 290 },
-        { k: "Waiting regrind", v: 38 },
-        { k: "Waiting scrap", v: 12 },
-        { k: "At vendor", v: 8 },
-        { k: "Scrapped", v: 45 },
-      ];
+  // Live KPI totals computed from tool_inventory
+  const kpis = [
+    { k: "Tools tracked", v: rows.length, accent: true },
+    { k: "Available", v: sum("avail") },
+    { k: "In use", v: sum("inuse") },
+    { k: "Waiting regrind", v: sum("wregr") },
+    { k: "Waiting scrap", v: sum("wscrap") },
+    { k: "At vendor", v: sum("atregr") },
+    { k: "Scrapped", v: sum("scrap") },
+  ];
 
   return (
     <div>
       <h1 className="page-title">Dashboard</h1>
       <p className="page-sub">
-        {has ? "Live tool inventory across the crib." : "Sample figures — live data loads once your tables are populated."}
+        {has ? "Live tool inventory across the crib." : "Live tool inventory across the crib. (0 tools currently registered)"}
       </p>
 
       <div className="grid-kpi">

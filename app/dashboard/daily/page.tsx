@@ -24,9 +24,9 @@ export default async function DailyPage() {
     <div>
       <h1 className="page-title">Daily folders</h1>
       <p className="page-sub">
-        {live ? "One folder per day — every transaction posted that day." : "Sample days — real folders appear as transactions are posted."}
+        {live ? "One folder per day — every transaction posted that day." : "No transactions posted yet. Daily folders will appear once transactions are recorded."}
       </p>
-      <DailyView rows={live ? rows : SAMPLE} />
+      <DailyView rows={rows} />
     </div>
   );
 }
