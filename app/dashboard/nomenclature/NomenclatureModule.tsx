@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useMemo, useEffect } from "react";
+import { useState, useMemo } from "react";
 import {
   TOOL_TYPES as DEFAULT_TOOL_TYPES,
   type ToolTypeDefinition,
@@ -11,24 +11,24 @@ import {
 const STORAGE_KEY = "ai_tms_custom_nomenclature_types";
 
 export default function NomenclatureModule() {
-  const [types, setTypes] = useState<ToolTypeDefinition[]>(DEFAULT_TOOL_TYPES);
+  const [types, setTypes] = useState<ToolTypeDefinition[]>(() => {
+    if (typeof window !== "undefined") {
+      try {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (saved) {
+          const parsed = JSON.parse(saved);
+          if (Array.isArray(parsed) && parsed.length > 0) {
+            return parsed;
+          }
+        }
+      } catch (e) {
+        console.error("Failed to load custom nomenclature types:", e);
+      }
+    }
+    return DEFAULT_TOOL_TYPES;
+  });
   const [search, setSearch] = useState("");
   const [selectedCategory, setSelectedCategory] = useState<string>("All");
-
-  // Load custom types from browser localStorage on mount
-  useEffect(() => {
-    try {
-      const saved = localStorage.getItem(STORAGE_KEY);
-      if (saved) {
-        const parsed = JSON.parse(saved);
-        if (Array.isArray(parsed) && parsed.length > 0) {
-          setTypes(parsed);
-        }
-      }
-    } catch (e) {
-      console.error("Failed to load custom nomenclature types:", e);
-    }
-  }, []);
 
   // Save changes to localStorage
   const saveTypes = (newTypes: ToolTypeDefinition[]) => {
@@ -249,7 +249,7 @@ export default function NomenclatureModule() {
                 </div>
                 <div>
                   <label className="muted" style={{ fontSize: 11, display: "block", marginBottom: 4 }}>Chamfer Form (ISO 2283 / DIN 2197)</label>
-                  <select className="select" value={genForm} onChange={(e) => setGenForm(e.target.value as any)}>
+                  <select className="select" value={genForm} onChange={(e) => setGenForm(e.target.value as "" | "A" | "B" | "C" | "D" | "E")}>
                     <option value="">None (Standard)</option>
                     <option value="A">A — Long taper (~6-8 pitches, Through)</option>
                     <option value="B">B — Medium (~3.5-5 pitches, Through)</option>
@@ -346,7 +346,7 @@ export default function NomenclatureModule() {
 
               <div>
                 <label className="muted" style={{ fontSize: 11, display: "block", marginBottom: 4 }}>Category</label>
-                <select className="select" value={formCat} onChange={(e) => setFormCat(e.target.value as any)}>
+                <select className="select" value={formCat} onChange={(e) => setFormCat(e.target.value as ToolTypeDefinition["category"])}>
                   <option value="Solid Carbide">Solid Carbide</option>
                   <option value="Drill">Drill</option>
                   <option value="Mill">Mill</option>

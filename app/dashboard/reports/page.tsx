@@ -36,6 +36,17 @@ interface InventoryRow {
   life: number | null;
 }
 
+function computeDaysOut(issuedAt: string): { daysOut: number; expectedReturn: string; isOverdue: boolean } {
+  if (!issuedAt) return { daysOut: 0, expectedReturn: "—", isOverdue: false };
+  const issueDate = new Date(issuedAt.replace(" ", "T"));
+  if (isNaN(issueDate.getTime())) return { daysOut: 0, expectedReturn: "—", isOverdue: false };
+  const now = Date.now();
+  const daysOut = Math.max(0, Math.floor((now - issueDate.getTime()) / (1000 * 60 * 60 * 24)));
+  const expDate = new Date(issueDate.getTime() + 7 * 24 * 60 * 60 * 1000);
+  const expectedReturn = expDate.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
+  return { daysOut, expectedReturn, isOverdue: daysOut >= 14 };
+}
+
 export default async function ReportsPage() {
   const supabase = await createClient();
 
@@ -88,22 +99,11 @@ export default async function ReportsPage() {
     .map((r) => {
       const issue = latestIssueByTool.get(r.tool_id);
       const issuedAt = issue?.ts ?? "";
-
-      let daysOut = 0;
-      let expectedReturn = "—";
-      if (issuedAt) {
-        const issueDate = new Date(issuedAt.replace(" ", "T"));
-        if (!isNaN(issueDate.getTime())) {
-          daysOut = Math.max(0, Math.floor((Date.now() - issueDate.getTime()) / (1000 * 60 * 60 * 24)));
-          const expDate = new Date(issueDate.getTime() + 7 * 24 * 60 * 60 * 1000);
-          expectedReturn = expDate.toLocaleDateString("en-GB", { day: "2-digit", month: "short", year: "numeric" });
-        }
-      }
+      const { daysOut, expectedReturn, isOverdue } = computeDaysOut(issuedAt);
 
       const issuedTo = issue?.machine || issue?.tofrom || r.loc || "Shop Floor / Machine";
       const person = issue?.person || "—";
       const issuedBy = issue?.issued_by || "Store";
-      const isOverdue = daysOut >= 14;
 
       return {
         tool_id: r.tool_id,
